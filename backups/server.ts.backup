@@ -1,0 +1,641 @@
+import express, { Request, Response, NextFunction } from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { db } from './server/db';
+import { FALLBACK_SPOTLIGHT, FALLBACK_TRENDING, MANGA_DIRECTORY_POOL } from './src/services/animeApi';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Parse JSON and URL-encoded bodies with reasonable limits
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+// Helper: Hash IP for privacy compliance
+function hashIp(req: Request): string {
+  const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const ipStr = Array.isArray(rawIp) ? rawIp[0] : rawIp.split(',')[0];
+  return crypto.createHash('sha256').update(ipStr).digest('hex').substring(0, 16);
+}
+
+// Helper: Extract Admin Session Token
+function getAdminToken(req: Request): string | undefined {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  const customHeader = req.headers['x-admin-token'];
+  if (customHeader && typeof customHeader === 'string') {
+    return customHeader.trim();
+  }
+  return undefined;
+}
+
+// Middleware: Require Authenticated Administrator
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const token = getAdminToken(req);
+  const session = db.validateSession(token);
+  if (!session) {
+    return res.status(401).json({
+      error: 'Unauthorized: Valid administrator session token required.',
+      code: 'AUTH_REQUIRED',
+    });
+  }
+  (req as any).adminSession = session;
+  next();
+}
+
+// ==========================================
+// 1. ADMIN AUTHENTICATION & ACCESS API
+// ==========================================
+
+// Check Admin Status (Initialized, Authenticated, Email)
+app.get('/api/admin/auth/status', (req: Request, res: Response) => {
+  const admin = db.getAdmin();
+  const token = getAdminToken(req);
+  const session = db.validateSession(token);
+
+  res.json({
+    initialized: Boolean(admin),
+    authenticated: Boolean(session),
+    adminEmail: session ? session.email : undefined,
+    role: session ? session.role : undefined,
+  });
+});
+
+// Initial Administrator Setup (One-time secure initialization)
+app.post('/api/admin/auth/setup', (req: Request, res: Response) => {
+  const existing = db.getAdmin();
+  if (existing) {
+    return res.status(403).json({
+      error: 'Administrator account is already initialized. Please sign in.',
+      code: 'ALREADY_INITIALIZED',
+    });
+  }
+
+  const { email, password } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid email address is required.' });
+  }
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters in length.' });
+  }
+
+  const admin = db.setAdmin(email, password);
+  const token = db.createSession(admin.email, 'owner');
+
+  res.json({
+    success: true,
+    message: 'Administrator account successfully configured.',
+    token,
+    admin: {
+      email: admin.email,
+      role: admin.role,
+    },
+  });
+});
+
+// Admin Login with Rate Limiting & Secure Verification
+app.post('/api/admin/auth/login', (req: Request, res: Response) => {
+  const ip = hashIp(req);
+  const rateLimit = db.checkRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: `Too many failed login attempts. Please wait ${rateLimit.waitMinutes} minute(s) before retrying.`,
+      code: 'RATE_LIMITED',
+    });
+  }
+
+  const admin = db.getAdmin();
+  if (!admin) {
+    return res.status(404).json({
+      error: 'No administrator configured yet. Please complete initial setup.',
+      code: 'NOT_INITIALIZED',
+    });
+  }
+
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  const normalizedInputEmail = email.trim().toLowerCase();
+  const isEmailMatch = normalizedInputEmail === admin.email;
+  const isPasswordMatch = isEmailMatch && db.verifyPassword(password, admin.passwordHash, admin.salt);
+
+  if (!isPasswordMatch) {
+    db.recordFailedLogin(ip);
+    return res.status(401).json({
+      error: 'Invalid administrator credentials. Access denied.',
+      code: 'INVALID_CREDENTIALS',
+    });
+  }
+
+  // Success: Reset failed attempts and create session token
+  db.resetFailedLogins(ip);
+  const token = db.createSession(admin.email, admin.role);
+
+  res.json({
+    success: true,
+    token,
+    admin: {
+      email: admin.email,
+      role: admin.role,
+    },
+  });
+});
+
+// Admin Logout
+app.post('/api/admin/auth/logout', (req: Request, res: Response) => {
+  const token = getAdminToken(req);
+  if (token) {
+    db.revokeSession(token);
+  }
+  res.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// Update Administrator Credentials
+app.post('/api/admin/auth/update-account', requireAdmin, (req: Request, res: Response) => {
+  const admin = db.getAdmin();
+  if (!admin) return res.status(404).json({ error: 'Admin record not found.' });
+
+  const { currentPassword, newEmail, newPassword } = req.body;
+  if (!currentPassword || !db.verifyPassword(currentPassword, admin.passwordHash, admin.salt)) {
+    return res.status(401).json({ error: 'Current password verification failed.' });
+  }
+
+  if (newPassword && newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  }
+
+  if (newEmail && !newEmail.includes('@')) {
+    return res.status(400).json({ error: 'Invalid new email address.' });
+  }
+
+  db.updateAdminCredentials(admin.email, newEmail, newPassword);
+  res.json({ success: true, message: 'Administrator credentials updated successfully.' });
+});
+
+// ==========================================
+// 2. ADMIN DASHBOARD OVERVIEW & ANALYTICS
+// ==========================================
+
+app.get('/api/admin/overview', requireAdmin, (req: Request, res: Response) => {
+  const events = db.getAnalyticsEvents();
+  const users = db.getUsers();
+  const ads = db.getAds();
+  const announcements = db.getAnnouncements();
+  const donation = db.getDonationCampaign();
+
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+  const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const oneMonthAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+  // Real visitor metrics
+  const uniqueIps = new Set(events.map((e) => e.ipHash));
+  const dailyEvents = events.filter((e) => e.timestamp >= oneDayAgo);
+  const weeklyEvents = events.filter((e) => e.timestamp >= oneWeekAgo);
+  const monthlyEvents = events.filter((e) => e.timestamp >= oneMonthAgo);
+
+  const dailyVisitors = new Set(dailyEvents.map((e) => e.ipHash)).size;
+  const weeklyVisitors = new Set(weeklyEvents.map((e) => e.ipHash)).size;
+  const monthlyVisitors = new Set(monthlyEvents.map((e) => e.ipHash)).size;
+
+  // Real watch duration calculation
+  const playEvents = events.filter((e) => e.type === 'episode_start' || e.type === 'episode_complete');
+  const totalWatchMinutes = playEvents.reduce((acc, curr) => {
+    return acc + (curr.metadata?.durationMinutes || 24);
+  }, 0);
+
+  // Content popularity from real tracking events
+  const animeViewCounts: Record<string, { count: number; title: string }> = {};
+  const mangaViewCounts: Record<string, { count: number; title: string }> = {};
+
+  events.forEach((e) => {
+    if (e.type === 'page_view' || e.type === 'episode_start') {
+      if (e.targetTitle && e.category === 'anime') {
+        animeViewCounts[e.targetTitle] = {
+          count: (animeViewCounts[e.targetTitle]?.count || 0) + 1,
+          title: e.targetTitle,
+        };
+      }
+    }
+    if (e.type === 'manga_view' || e.type === 'chapter_open') {
+      if (e.targetTitle && e.category === 'manga') {
+        mangaViewCounts[e.targetTitle] = {
+          count: (mangaViewCounts[e.targetTitle]?.count || 0) + 1,
+          title: e.targetTitle,
+        };
+      }
+    }
+  });
+
+  const topAnime = Object.values(animeViewCounts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const topManga = Object.values(mangaViewCounts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  res.json({
+    analyticsEmpty: events.length === 0,
+    metrics: {
+      totalPageViews: events.length,
+      totalUniqueVisitors: uniqueIps.size,
+      dailyVisitors,
+      weeklyVisitors,
+      monthlyVisitors,
+      registeredUsersCount: users.length,
+      activeUsersCount: users.filter((u) => u.status === 'active').length,
+      totalWatchMinutes,
+      activeAdCampaignsCount: ads.globalEnabled ? ads.campaigns.filter((c) => c.enabled).length : 0,
+      activeAnnouncementsCount: announcements.filter((a) => a.enabled).length,
+      donationCampaignActive: donation.enabled,
+    },
+    topAnime,
+    topManga,
+  });
+});
+
+app.get('/api/admin/analytics', requireAdmin, (req: Request, res: Response) => {
+  const { range = '7d' } = req.query;
+  const now = Date.now();
+  let since = now - 7 * 24 * 60 * 60 * 1000;
+  if (range === '24h') since = now - 24 * 60 * 60 * 1000;
+  if (range === '30d') since = now - 30 * 24 * 60 * 60 * 1000;
+  if (range === '90d') since = now - 90 * 24 * 60 * 60 * 1000;
+
+  const events = db.getAnalyticsEvents({ since });
+
+  if (events.length === 0) {
+    return res.json({
+      isEmpty: true,
+      totalEvents: 0,
+      message: 'No analytics events collected in this timeframe yet.',
+      dailyTimeline: [],
+      eventTypesBreakdown: {},
+      topPages: [],
+    });
+  }
+
+  // Aggregate by Day
+  const dailyMap: Record<string, { date: string; pageViews: number; plays: number; reads: number }> = {};
+  const typeBreakdown: Record<string, number> = {};
+  const pageCounts: Record<string, number> = {};
+
+  events.forEach((evt) => {
+    const day = evt.isoDate.split('T')[0];
+    if (!dailyMap[day]) {
+      dailyMap[day] = { date: day, pageViews: 0, plays: 0, reads: 0 };
+    }
+
+    typeBreakdown[evt.type] = (typeBreakdown[evt.type] || 0) + 1;
+    pageCounts[evt.path] = (pageCounts[evt.path] || 0) + 1;
+
+    if (evt.type === 'page_view') dailyMap[day].pageViews += 1;
+    if (evt.type === 'episode_start' || evt.type === 'episode_complete') dailyMap[day].plays += 1;
+    if (evt.type === 'manga_view' || evt.type === 'chapter_open') dailyMap[day].reads += 1;
+  });
+
+  const dailyTimeline = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+  const topPages = Object.entries(pageCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([path, count]) => ({ path, count }));
+
+  res.json({
+    isEmpty: false,
+    totalEvents: events.length,
+    dailyTimeline,
+    eventTypesBreakdown: typeBreakdown,
+    topPages,
+  });
+});
+
+// ==========================================
+// 3. USER MANAGEMENT
+// ==========================================
+
+app.get('/api/admin/users', requireAdmin, (req: Request, res: Response) => {
+  const { query, status } = req.query;
+  let users = db.getUsers();
+
+  if (query && typeof query === 'string') {
+    const q = query.toLowerCase().trim();
+    users = users.filter(
+      (u) =>
+        u.email.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        u.fullName.toLowerCase().includes(q)
+    );
+  }
+
+  if (status && (status === 'active' || status === 'suspended')) {
+    users = users.filter((u) => u.status === status);
+  }
+
+  res.json({ users });
+});
+
+app.post('/api/admin/users/:id/status', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (status !== 'active' && status !== 'suspended') {
+    return res.status(400).json({ error: 'Status must be active or suspended.' });
+  }
+
+  const success = db.updateUserStatus(id, status);
+  if (!success) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  res.json({ success: true, message: `User status changed to ${status}.` });
+});
+
+// ==========================================
+// 4. WATCH & READING ACTIVITY
+// ==========================================
+
+app.get('/api/admin/watch-activity', requireAdmin, (req: Request, res: Response) => {
+  const { category, type } = req.query;
+  let events = db.getAnalyticsEvents();
+
+  const activityTypes = ['episode_start', 'episode_complete', 'manga_view', 'chapter_open', 'search_query', 'feature_click'];
+  events = events.filter((e) => activityTypes.includes(e.type));
+
+  if (type && typeof type === 'string') {
+    events = events.filter((e) => e.type === type);
+  }
+
+  if (category && typeof category === 'string') {
+    events = events.filter((e) => e.category === category);
+  }
+
+  res.json({
+    total: events.length,
+    events: events.slice(-100).reverse(), // Most recent 100 events
+  });
+});
+
+// ==========================================
+// 5. ADVERTISEMENT MANAGER (OFF BY DEFAULT)
+// ==========================================
+
+app.get('/api/admin/ads', requireAdmin, (_req: Request, res: Response) => {
+  res.json(db.getAds());
+});
+
+app.post('/api/admin/ads/global', requireAdmin, (req: Request, res: Response) => {
+  const { globalEnabled } = req.body;
+  const updated = db.updateAdGlobal(Boolean(globalEnabled));
+  res.json({ success: true, ads: updated });
+});
+
+app.post('/api/admin/ads/campaign', requireAdmin, (req: Request, res: Response) => {
+  const campaignData = req.body;
+  if (!campaignData.title) {
+    return res.status(400).json({ error: 'Campaign title is required.' });
+  }
+  const saved = db.saveAdCampaign(campaignData);
+  res.json({ success: true, campaign: saved });
+});
+
+app.post('/api/admin/ads/campaign/:id/toggle', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { enabled } = req.body;
+  const success = db.toggleAdCampaign(id, Boolean(enabled));
+  if (!success) return res.status(404).json({ error: 'Campaign not found.' });
+  res.json({ success: true, enabled: Boolean(enabled) });
+});
+
+app.delete('/api/admin/ads/campaign/:id', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const success = db.deleteAdCampaign(id);
+  res.json({ success });
+});
+
+// ==========================================
+// 6. POP-UP & ANNOUNCEMENT MANAGER
+// ==========================================
+
+app.get('/api/admin/announcements', requireAdmin, (_req: Request, res: Response) => {
+  res.json({ announcements: db.getAnnouncements() });
+});
+
+app.post('/api/admin/announcements', requireAdmin, (req: Request, res: Response) => {
+  const data = req.body;
+  if (!data.title || !data.message) {
+    return res.status(400).json({ error: 'Announcement title and message are required.' });
+  }
+  const saved = db.saveAnnouncement(data);
+  res.json({ success: true, announcement: saved });
+});
+
+app.post('/api/admin/announcements/:id/toggle', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { enabled } = req.body;
+  const success = db.toggleAnnouncement(id, Boolean(enabled));
+  if (!success) return res.status(404).json({ error: 'Announcement not found.' });
+  res.json({ success: true, enabled: Boolean(enabled) });
+});
+
+app.delete('/api/admin/announcements/:id', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const success = db.deleteAnnouncement(id);
+  res.json({ success });
+});
+
+// ==========================================
+// 7. QR DONATION CAMPAIGN MANAGER
+// ==========================================
+
+app.get('/api/admin/donations', requireAdmin, (_req: Request, res: Response) => {
+  res.json({ donation: db.getDonationCampaign() });
+});
+
+app.post('/api/admin/donations', requireAdmin, (req: Request, res: Response) => {
+  const update = req.body;
+  const updated = db.updateDonationCampaign(update);
+  res.json({ success: true, donation: updated });
+});
+
+// ==========================================
+// 8. REVENUE & EARNINGS
+// ==========================================
+
+app.get('/api/admin/revenue', requireAdmin, (_req: Request, res: Response) => {
+  const ads = db.getAds();
+  const donation = db.getDonationCampaign();
+
+  const confirmedDonations = donation.verifiedDonationAmount || 0;
+  const estimatedAdRevenue = ads.globalEnabled
+    ? ads.campaigns.reduce((acc, c) => acc + (c.estimatedEarnings || 0), 0)
+    : 0;
+
+  res.json({
+    adsEnabled: ads.globalEnabled,
+    confirmedDonationRevenue: confirmedDonations,
+    estimatedAdRevenue: estimatedAdRevenue,
+    donationCount: donation.totalDonationCount || 0,
+    hasIntegratedGateway: false,
+    notice: ads.globalEnabled
+      ? 'Advertising is currently enabled.'
+      : 'All advertisements are currently disabled by default. No ad revenue is generated until campaigns are configured and enabled.',
+  });
+});
+
+// ==========================================
+// 9. CONTENT MANAGEMENT (Anime & Manga)
+// ==========================================
+
+app.get('/api/admin/content', requireAdmin, (_req: Request, res: Response) => {
+  const overrides = db.getContentOverrides();
+  res.json({
+    anime: FALLBACK_SPOTLIGHT.concat(FALLBACK_TRENDING.slice(4)),
+    manga: MANGA_DIRECTORY_POOL,
+    overrides,
+  });
+});
+
+app.post('/api/admin/content/toggle-visibility', requireAdmin, (req: Request, res: Response) => {
+  const { type, id, hide } = req.body;
+  if (type === 'anime') {
+    db.toggleAnimeVisibility(Number(id), Boolean(hide));
+  } else {
+    db.toggleMangaVisibility(Number(id), Boolean(hide));
+  }
+  res.json({ success: true, overrides: db.getContentOverrides() });
+});
+
+app.post('/api/admin/content/toggle-featured', requireAdmin, (req: Request, res: Response) => {
+  const { type, id, feature } = req.body;
+  if (type === 'anime') {
+    db.toggleAnimeFeatured(Number(id), Boolean(feature));
+  } else {
+    db.toggleMangaFeatured(Number(id), Boolean(feature));
+  }
+  res.json({ success: true, overrides: db.getContentOverrides() });
+});
+
+// ==========================================
+// 10. WEBSITE SETTINGS
+// ==========================================
+
+app.get('/api/admin/settings', requireAdmin, (_req: Request, res: Response) => {
+  res.json({ settings: db.getSettings() });
+});
+
+app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
+  const update = req.body;
+  const updated = db.updateSettings(update);
+  res.json({ success: true, settings: updated });
+});
+
+// ==========================================
+// 11. PUBLIC CLIENT-SIDE APIs FOR MIRAI
+// ==========================================
+
+// Ingest real analytics event from frontend
+app.post('/api/analytics/event', (req: Request, res: Response) => {
+  const { type, path, targetId, targetTitle, category, metadata } = req.body;
+  if (!type || !path) {
+    return res.status(400).json({ error: 'type and path are required' });
+  }
+
+  const ipHash = hashIp(req);
+  db.addAnalyticsEvent({
+    type,
+    path,
+    targetId,
+    targetTitle,
+    category,
+    metadata,
+    ipHash,
+  });
+
+  res.status(201).json({ status: 'recorded' });
+});
+
+// Sync registration event so user appears in admin panel
+app.post('/api/auth/register-sync', (req: Request, res: Response) => {
+  const { fullName, username, email, favoriteGenres } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  const user = db.registerUser({
+    fullName: fullName || username || 'Mirai Member',
+    username: username || email.split('@')[0],
+    email: email.trim().toLowerCase(),
+    favoriteGenres: favoriteGenres || ['Action', 'Fantasy'],
+  });
+
+  res.json({ success: true, user });
+});
+
+// Public announcements (only enabled & valid date)
+app.get('/api/public/announcements', (_req: Request, res: Response) => {
+  const all = db.getAnnouncements();
+  const active = all.filter((a) => a.enabled);
+  res.json({ announcements: active });
+});
+
+// Public donation campaign (only if enabled)
+app.get('/api/public/donations', (_req: Request, res: Response) => {
+  const campaign = db.getDonationCampaign();
+  res.json({ donation: campaign });
+});
+
+// Public ads (empty unless globalEnabled is true)
+app.get('/api/public/ads', (_req: Request, res: Response) => {
+  const ads = db.getAds();
+  if (!ads.globalEnabled) {
+    return res.json({ enabled: false, campaigns: [] });
+  }
+  const active = ads.campaigns.filter((c) => c.enabled);
+  res.json({ enabled: true, campaigns: active });
+});
+
+// Public site settings
+app.get('/api/public/settings', (_req: Request, res: Response) => {
+  const settings = db.getSettings();
+  res.json({
+    websiteName: settings.websiteName,
+    maintenanceMode: settings.maintenanceMode,
+    maintenanceNotice: settings.maintenanceNotice,
+    allowRegistrations: settings.allowRegistrations,
+  });
+});
+
+// ==========================================
+// 12. STATIC / VITE INTEGRATION
+// ==========================================
+
+async function startServer() {
+  if (!isProduction) {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.resolve('dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`MIRAI Full-Stack Server running at http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+});

@@ -1,0 +1,622 @@
+import React, { useState } from 'react';
+import {
+  Users,
+  PlayCircle,
+  BookOpen,
+  Activity,
+  ArrowUpRight,
+  ArrowDownRight,
+  TrendingUp,
+  Clock,
+  Sparkles,
+  Server,
+  RefreshCw,
+  Download,
+  Filter,
+  CheckCircle2,
+  AlertTriangle,
+  Flame,
+  ChevronRight,
+  MoreVertical,
+  Sliders,
+  Layers,
+  Database,
+  Eye,
+} from 'lucide-react';
+import { AdminLayout, AdminTab } from './AdminLayout';
+import { useApp } from '../../context/AppContext';
+import { MANGA_DIRECTORY_POOL, FALLBACK_SPOTLIGHT } from '../../services/animeApi';
+
+export const AdminDashboardView: React.FC = () => {
+  const { showToast, navigateToDetail, navigateToMangaDetail } = useApp();
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d' | '90d'>('7d');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+      showToast('Telemetry Synced', 'Live operational metrics updated from edge nodes.', 'success');
+    }, 600);
+  };
+
+  // Mock KPI Metrics
+  const stats = [
+    {
+      label: 'Active Streamers & Readers',
+      value: '148,290',
+      change: '+14.2%',
+      isPositive: true,
+      timeframe: 'vs last 7 days',
+      icon: Users,
+      accentColor: 'text-[#8b5cf6]',
+      bgGlow: 'bg-[#8b5cf6]/10',
+    },
+    {
+      label: 'Daily Stream Volume',
+      value: '1.84M hrs',
+      change: '+8.6%',
+      isPositive: true,
+      timeframe: '1080p / 4K bitstreams',
+      icon: PlayCircle,
+      accentColor: 'text-[#3b82f6]',
+      bgGlow: 'bg-[#3b82f6]/10',
+    },
+    {
+      label: 'Manga Chapters Read',
+      value: '624,180',
+      change: '+22.4%',
+      isPositive: true,
+      timeframe: 'webtoon / vertical reader',
+      icon: BookOpen,
+      accentColor: 'text-[#ec4899]',
+      bgGlow: 'bg-[#ec4899]/10',
+    },
+    {
+      label: 'CDN Edge Cache Ratio',
+      value: '99.4%',
+      change: '+0.3%',
+      isPositive: true,
+      timeframe: '42.8 Gbps edge egress',
+      icon: Activity,
+      accentColor: 'text-[#22c55e]',
+      bgGlow: 'bg-[#22c55e]/10',
+    },
+  ];
+
+  // Mock Traffic Curve Data Points (Normalized 0 - 100)
+  const trafficPoints = [
+    { label: 'Mon', val: 45, anime: 60, manga: 35 },
+    { label: 'Tue', val: 52, anime: 65, manga: 42 },
+    { label: 'Wed', val: 48, anime: 58, manga: 40 },
+    { label: 'Thu', val: 70, anime: 85, manga: 55 },
+    { label: 'Fri', val: 88, anime: 95, manga: 78 },
+    { label: 'Sat', val: 96, anime: 100, manga: 92 },
+    { label: 'Sun', val: 90, anime: 92, manga: 85 },
+  ];
+
+  // Mock Top Performing Content
+  const topContent = [
+    {
+      id: 110349,
+      type: 'ANIME',
+      title: 'Cyberpunk: Edgerunners',
+      epOrCh: '10 EP · ONA',
+      activeViewers: '34,810',
+      avgCompletion: '94%',
+      cdnStatus: 'Warm Edge',
+      cover: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=200&q=80',
+      score: '8.3',
+    },
+    {
+      id: 30005,
+      type: 'MANHWA',
+      title: 'Solo Leveling',
+      epOrCh: '200 CH · Finished',
+      activeViewers: '28,420',
+      avgCompletion: '91%',
+      cdnStatus: 'Warm Edge',
+      cover: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=200&q=80',
+      score: '8.8',
+    },
+    {
+      id: 154587,
+      type: 'ANIME',
+      title: "Frieren: Beyond Journey's End",
+      epOrCh: '28 EP · TV',
+      activeViewers: '24,190',
+      avgCompletion: '96%',
+      cdnStatus: 'Warm Edge',
+      cover: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=200&q=80',
+      score: '9.2',
+    },
+    {
+      id: 30001,
+      type: 'MANGA',
+      title: 'Berserk',
+      epOrCh: '376 CH · Releasing',
+      activeViewers: '19,550',
+      avgCompletion: '89%',
+      cdnStatus: 'Cold Ingest',
+      cover: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=200&q=80',
+      score: '9.4',
+    },
+    {
+      id: 30009,
+      type: 'MANHWA',
+      title: "Omniscient Reader's Viewpoint",
+      epOrCh: '215 CH · Releasing',
+      activeViewers: '16,230',
+      avgCompletion: '92%',
+      cdnStatus: 'Warm Edge',
+      cover: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=200&q=80',
+      score: '9.3',
+    },
+  ];
+
+  // System Live Audit Event Stream
+  const systemLogs = [
+    {
+      id: 'log-1',
+      time: '1 min ago',
+      level: 'INFO',
+      message: 'Edge Node Tok-03 cached Dan Da Dan Episode 5 master stream.',
+      source: 'CDN-Ingest',
+    },
+    {
+      id: 'log-2',
+      time: '4 mins ago',
+      level: 'SUCCESS',
+      message: 'Manga scraper synced Ch. 215 of Omniscient Reader with 22 pages.',
+      source: 'MangaBall-Sync',
+    },
+    {
+      id: 'log-3',
+      time: '12 mins ago',
+      level: 'INFO',
+      message: 'Automated thumbnail spoiler blur verified for 18 recent airings.',
+      source: 'Moderation-Bot',
+    },
+    {
+      id: 'log-4',
+      time: '25 mins ago',
+      level: 'SUCCESS',
+      message: 'SSL certificates renewed for stream proxy gateway (*.mirai.app).',
+      source: 'Security-Daemon',
+    },
+  ];
+
+  return (
+    <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
+      <div className="space-y-8">
+        {/* Operational Overview Header with Filter Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="font-heading text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+              Platform Telemetry &amp; Overview
+            </h2>
+            <p className="text-xs text-white/50 mt-1">
+              Live ingest pipelines, concurrency stats, and readership distribution across all global nodes.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            {/* Timeframe Selector */}
+            <div className="inline-flex p-1 rounded-full glass bg-[#0c0c0e]/80 border border-white/10">
+              {(['24h', '7d', '30d', '90d'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={`h-[28px] px-3 rounded-full text-xs font-semibold transition-all uppercase ${
+                    timeRange === r
+                      ? 'bg-white text-black font-bold shadow-sm'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              className="h-[36px] px-3.5 rounded-full glass flex items-center gap-2 text-xs font-semibold text-white/80 hover:text-white hover:border-white/20 transition-all active:scale-95"
+              title="Refresh telemetry"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#8b5cf6]' : ''}`} />
+              <span className="hidden sm:inline">Sync</span>
+            </button>
+
+            {/* Export Report Button */}
+            <button
+              onClick={() => showToast('Export Generated', 'Report downloaded in CSV format.', 'success')}
+              className="h-[36px] px-3.5 rounded-full glass flex items-center gap-1.5 text-xs font-semibold text-white/80 hover:text-white hover:border-white/20 transition-all"
+              title="Export analytics"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 1. KEY PERFORMANCE STAT CARDS (Responsive 4-column Grid) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+          {stats.map((stat, idx) => {
+            const Icon = stat.icon;
+            return (
+              <div
+                key={idx}
+                className="p-5 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] hover:border-white/20 transition-all duration-300 shadow-[0_8px_32px_rgba(0,0,0,0.45)] group hover:-translate-y-1 relative overflow-hidden"
+              >
+                {/* Subtle Glow corner */}
+                <div className={`absolute top-0 right-0 w-24 h-24 rounded-full ${stat.bgGlow} blur-2xl pointer-events-none`} />
+
+                <div className="flex items-center justify-between mb-3 relative z-10">
+                  <span className="text-xs font-semibold text-white/50">{stat.label}</span>
+                  <div className={`w-9 h-9 rounded-xl glass flex items-center justify-center ${stat.accentColor}`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="flex items-baseline gap-2 relative z-10">
+                  <span className="font-heading text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                    {stat.value}
+                  </span>
+                  <span
+                    className={`inline-flex items-center text-xs font-bold ${
+                      stat.isPositive ? 'text-[#22c55e]' : 'text-red-400'
+                    }`}
+                  >
+                    {stat.isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                    <span>{stat.change}</span>
+                  </span>
+                </div>
+
+                <div className="mt-2 text-[11px] text-white/40 flex items-center gap-1.5 relative z-10">
+                  <Clock className="w-3 h-3 text-white/30" />
+                  <span>{stat.timeframe}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 2. MAIN ANALYTICS SECTION (Traffic Graph + Content Distribution) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Traffic & Streaming Curve (2 cols on desktop) */}
+          <div className="lg:col-span-2 p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex flex-col justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-heading text-base font-bold text-white">
+                    Traffic &amp; Concurrent Stream Egress
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-[4px] bg-[#22c55e]/15 border border-[#22c55e]/30 text-[#22c55e] text-[10px] font-bold">
+                    LIVE
+                  </span>
+                </div>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Real-time bandwidth consumption across streaming and reading engines.
+                </p>
+              </div>
+
+              {/* Graph Legend */}
+              <div className="flex items-center gap-4 text-xs font-semibold">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6]" />
+                  <span className="text-white/70">Anime Streaming</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#ec4899]" />
+                  <span className="text-white/70">Manga Reader</span>
+                </div>
+              </div>
+            </div>
+
+            {/* SVG Visual Area Chart */}
+            <div className="w-full h-[220px] relative flex items-end">
+              {/* Background Horizontal Guide Grid Lines */}
+              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
+                <div className="w-full border-b border-white" />
+                <div className="w-full border-b border-white" />
+                <div className="w-full border-b border-white" />
+                <div className="w-full border-b border-white" />
+              </div>
+
+              {/* Responsive SVG Area Graphs */}
+              <svg className="w-full h-full overflow-visible" viewBox="0 0 700 200" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="animeGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.0" />
+                  </linearGradient>
+                  <linearGradient id="mangaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ec4899" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="#ec4899" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+
+                {/* Anime Area */}
+                <path
+                  d="M 0,140 Q 116,110 233,125 T 466,60 T 700,30 L 700,200 L 0,200 Z"
+                  fill="url(#animeGradient)"
+                />
+                <path
+                  d="M 0,140 Q 116,110 233,125 T 466,60 T 700,30"
+                  fill="none"
+                  stroke="#8b5cf6"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+
+                {/* Manga Area */}
+                <path
+                  d="M 0,170 Q 116,140 233,150 T 466,100 T 700,60 L 700,200 L 0,200 Z"
+                  fill="url(#mangaGradient)"
+                />
+                <path
+                  d="M 0,170 Q 116,140 233,150 T 466,100 T 700,60"
+                  fill="none"
+                  stroke="#ec4899"
+                  strokeWidth="2.5"
+                  strokeDasharray="4 4"
+                  strokeLinecap="round"
+                />
+              </svg>
+
+              {/* Data points overlay on columns */}
+              <div className="absolute inset-0 flex justify-between items-end pb-1 px-2 pointer-events-none">
+                {trafficPoints.map((pt, i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <span className="text-[11px] font-mono text-white/40">{pt.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Metrics Footer */}
+            <div className="mt-5 pt-4 border-t border-white/[0.06] grid grid-cols-3 gap-2 text-center">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-white/40 block">Peak Concurrency</span>
+                <span className="font-heading text-sm font-bold text-white">41,200 users</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-white/40 block">95th Percentile Latency</span>
+                <span className="font-heading text-sm font-bold text-[#22c55e]">18.4 ms</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-white/40 block">Total Egress (24h)</span>
+                <span className="font-heading text-sm font-bold text-white">128.4 TB</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Platform Distribution & Engine Mix (1 col on desktop) */}
+          <div className="p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex flex-col justify-between">
+            <div>
+              <h3 className="font-heading text-base font-bold text-white">
+                Content &amp; Engine Mix
+              </h3>
+              <p className="text-xs text-white/50 mt-0.5">
+                Breakdown of user consumption across formats.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                {/* Anime Streaming */}
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="font-semibold text-white/80">Anime Video Streaming</span>
+                    <span className="font-mono text-white font-bold">58%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full bg-[#8b5cf6]" style={{ width: '58%' }} />
+                  </div>
+                </div>
+
+                {/* Manga / Manhwa */}
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="font-semibold text-white/80">Manga &amp; Manhwa Reading</span>
+                    <span className="font-mono text-white font-bold">34%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full bg-[#ec4899]" style={{ width: '34%' }} />
+                  </div>
+                </div>
+
+                {/* Airing Schedule & Discussion */}
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="font-semibold text-white/80">Schedule &amp; Community</span>
+                    <span className="font-mono text-white font-bold">8%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full bg-[#fbbf24]" style={{ width: '8%' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Edge Node Status List */}
+              <div className="mt-8 pt-5 border-t border-white/[0.06] space-y-2.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-white/40 block mb-2">
+                  Global Edge Nodes
+                </span>
+
+                <div className="flex items-center justify-between text-xs py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
+                    <span className="text-white/80 font-medium">Tokyo (NRT-01)</span>
+                  </div>
+                  <span className="text-white/40 font-mono">14ms · 99.9%</span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
+                    <span className="text-white/80 font-medium">Singapore (SIN-02)</span>
+                  </div>
+                  <span className="text-white/40 font-mono">22ms · 100%</span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
+                    <span className="text-white/80 font-medium">US West (SFO-01)</span>
+                  </div>
+                  <span className="text-white/40 font-mono">38ms · 99.8%</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => showToast('Cache Purge', 'Edge cache invalidated across 3 regions.', 'info')}
+              className="mt-6 w-full h-[36px] rounded-xl glass hover:bg-white/10 text-xs font-semibold text-white/80 hover:text-white border border-white/10 transition-colors"
+            >
+              Purge Global Edge Cache
+            </button>
+          </div>
+        </div>
+
+        {/* 3. PERFORMANCE TABLES & REAL-TIME AUDIT LOGS */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Top Performing Titles Table (2 cols) */}
+          <div className="lg:col-span-2 p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-heading text-base font-bold text-white">
+                  Top Trending Titles (24h)
+                </h3>
+                <p className="text-xs text-white/50">
+                  Highest engagement titles by concurrent stream count and chapter reads.
+                </p>
+              </div>
+
+              <button
+                onClick={() => showToast('Catalog View', 'Loading extended catalog...', 'info')}
+                className="text-xs font-semibold text-[#8b5cf6] hover:text-[#c084fc] transition-colors"
+              >
+                View Full Catalog ›
+              </button>
+            </div>
+
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-white/40 font-semibold uppercase text-[10px]">
+                    <th className="pb-3 pl-1">Title &amp; Format</th>
+                    <th className="pb-3 text-center">Active Now</th>
+                    <th className="pb-3 text-center">Score</th>
+                    <th className="pb-3 text-center">CDN State</th>
+                    <th className="pb-3 text-right pr-1">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {topContent.map((item) => (
+                    <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="py-3 pl-1">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={item.cover}
+                            alt=""
+                            className="w-9 h-12 rounded-[6px] object-cover bg-neutral-900 border border-white/10 flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <span className="font-heading font-bold text-white block truncate max-w-[200px] sm:max-w-[240px]">
+                              {item.title}
+                            </span>
+                            <span className="text-[11px] text-white/40">{item.epOrCh}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 text-center font-mono font-bold text-white">
+                        {item.activeViewers}
+                      </td>
+
+                      <td className="py-3 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 font-bold text-[#fbbf24] text-[11px]">
+                          ★ {item.score}
+                        </span>
+                      </td>
+
+                      <td className="py-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            item.cdnStatus === 'Warm Edge'
+                              ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/30'
+                              : 'bg-white/10 text-white/60 border border-white/15'
+                          }`}
+                        >
+                          {item.cdnStatus}
+                        </span>
+                      </td>
+
+                      <td className="py-3 text-right pr-1">
+                        <button
+                          onClick={() => {
+                            if (item.type === 'MANGA' || item.type === 'MANHWA') {
+                              navigateToMangaDetail(item.id);
+                            } else {
+                              navigateToDetail(item.id);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg glass text-[11px] font-semibold text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Real-Time Operational Log Feed (1 col) */}
+          <div className="p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-heading text-base font-bold text-white">
+                  Real-Time Audit Log
+                </h3>
+                <span className="flex items-center gap-1 text-[11px] text-[#22c55e] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-ping" />
+                  Streaming
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {systemLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs space-y-1 hover:border-white/15 transition-colors"
+                  >
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-semibold">
+                        {log.source}
+                      </span>
+                      <span className="text-white/40">{log.time}</span>
+                    </div>
+                    <p className="text-white/80 leading-relaxed text-[11px]">{log.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40">
+              <span>Auto-refreshing every 10s</span>
+              <button
+                onClick={() => showToast('Log Stream', 'Full log archive exported.', 'info')}
+                className="hover:text-white text-[11px] underline"
+              >
+                Download Archive
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+};

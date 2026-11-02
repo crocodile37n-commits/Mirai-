@@ -1,0 +1,598 @@
+import express, { Request, Response, NextFunction } from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
+import bcrypt from 'bcryptjs';
+import { sqliteDb } from './server/sqliteDb';
+import { db } from './server/db';
+import { FALLBACK_SPOTLIGHT, FALLBACK_TRENDING, MANGA_DIRECTORY_POOL } from './src/services/animeApi';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Authorized Administrator Email (defaults to owner email)
+export const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'altamashkhan27@gmail.com').trim().toLowerCase();
+
+// Ensure owner administrator account is ready in SQLite
+sqliteDb.ensureAdminAccount(ADMIN_EMAIL);
+
+// Body and Cookie parsers
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(cookieParser());
+
+// Helper: Hash IP for privacy compliance
+function hashIp(req: Request): string {
+  const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const ipStr = Array.isArray(rawIp) ? rawIp[0] : rawIp.split(',')[0];
+  return crypto.createHash('sha256').update(ipStr).digest('hex').substring(0, 16);
+}
+
+// Helper: Extract session token from HTTP-only cookie or Authorization header
+function getSessionToken(req: Request): string | undefined {
+  if (req.cookies && req.cookies.mirai_session) {
+    return req.cookies.mirai_session;
+  }
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  const customHeader = req.headers['x-admin-token'] || req.headers['x-auth-token'];
+  if (customHeader && typeof customHeader === 'string') {
+    return customHeader.trim();
+  }
+  return undefined;
+}
+
+// Middleware: Authenticate User
+function authenticateUser(req: Request, _res: Response, next: NextFunction) {
+  const token = getSessionToken(req);
+  if (token) {
+    const session = sqliteDb.validateSession(token);
+    if (session) {
+      const user = sqliteDb.getUserById(session.userId);
+      if (user && user.status === 'active') {
+        (req as any).user = user;
+        (req as any).token = token;
+      }
+    }
+  }
+  next();
+}
+
+// Middleware: Require Logged-in User
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({
+      error: 'Authentication required. Please sign in to your MIRAI account.',
+      code: 'AUTH_REQUIRED',
+    });
+  }
+  next();
+}
+
+// Middleware: Require Verified Owner/Administrator
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({
+      error: 'Administrator authentication required.',
+      code: 'ADMIN_AUTH_REQUIRED',
+    });
+  }
+
+  const isOwnerEmail = user.email.trim().toLowerCase() === ADMIN_EMAIL;
+  if (user.role !== 'admin' || !isOwnerEmail) {
+    sqliteDb.addAuditLog({
+      action: 'unauthorized_admin_access_attempt',
+      actorEmail: user.email,
+      actorRole: user.role,
+      details: `User attempted to access admin endpoint: ${req.originalUrl}`,
+      ipHash: hashIp(req),
+    });
+    return res.status(403).json({
+      error: 'Access denied: Only the authorized MIRAI administrator account may access this resource.',
+      code: 'FORBIDDEN_NOT_ADMIN',
+    });
+  }
+
+  next();
+}
+
+// Apply authentication middleware to all requests
+app.use(authenticateUser);
+
+// ==========================================
+// 1. AUTHENTICATION APIS (SIGN UP, SIGN IN, ME, LOGOUT)
+// ==========================================
+
+// Sign Up (Register with Username, Email, Password)
+app.post('/api/auth/register', (req: Request, res: Response) => {
+  const { username, email, password, fullName } = req.body;
+
+  if (!username || typeof username !== 'string' || username.trim().length < 3) {
+    return res.status(400).json({ error: 'Username must be at least 3 characters long.' });
+  }
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid email address is required.' });
+  }
+
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanUsername = username.trim();
+
+  // Check duplicate email
+  const existingEmail = sqliteDb.findUserByEmail(cleanEmail);
+  if (existingEmail) {
+    return res.status(409).json({
+      error: 'An account with this email address already exists. Please sign in.',
+      code: 'EMAIL_ALREADY_EXISTS',
+    });
+  }
+
+  // Check duplicate username
+  const existingUsername = sqliteDb.findUserByUsername(cleanUsername);
+  if (existingUsername) {
+    return res.status(409).json({
+      error: 'This username is already taken. Please choose another username.',
+      code: 'USERNAME_ALREADY_EXISTS',
+    });
+  }
+
+  // Only the exact ADMIN_EMAIL gets the admin role. Regular users ALWAYS get 'user'
+  const isOwner = cleanEmail === ADMIN_EMAIL;
+  const role: 'admin' | 'user' = isOwner ? 'admin' : 'user';
+
+  const { user } = sqliteDb.createUser({
+    username: cleanUsername,
+    email: cleanEmail,
+    password,
+    fullName: fullName?.trim() || cleanUsername,
+    role,
+  });
+
+  const ip = hashIp(req);
+  const token = sqliteDb.createSession(user.id, user.email, user.role, ip);
+
+  // Set secure HTTP-only cookie
+  res.cookie('mirai_session', token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
+  });
+
+  sqliteDb.addAuditLog({
+    action: 'user_registered',
+    actorEmail: user.email,
+    actorRole: user.role,
+    details: `User registered account (@${user.username})`,
+    ipHash: ip,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Account successfully created.',
+    user,
+    token,
+    isAdmin: user.role === 'admin' && user.email === ADMIN_EMAIL,
+  });
+});
+
+// Sign In (Authenticate with Username OR Email + Password)
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  const ip = hashIp(req);
+  const rateLimit = sqliteDb.checkRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: `Too many failed attempts. Please wait ${rateLimit.waitMinutes} minute(s) before trying again.`,
+      code: 'RATE_LIMITED',
+    });
+  }
+
+  const { identifier, email, password } = req.body;
+  const loginHandle = identifier || email;
+
+  if (!loginHandle || !password) {
+    return res.status(400).json({ error: 'Please enter your email or username, and password.' });
+  }
+
+  const userRecord = sqliteDb.findUserByEmailOrUsername(loginHandle);
+  if (!userRecord) {
+    sqliteDb.recordFailedLogin(ip);
+    return res.status(401).json({
+      error: 'Invalid credentials. No account found with that email or username.',
+      code: 'INVALID_CREDENTIALS',
+    });
+  }
+
+  if (userRecord.status === 'suspended') {
+    return res.status(403).json({
+      error: 'This account has been suspended. Please contact support.',
+      code: 'ACCOUNT_SUSPENDED',
+    });
+  }
+
+  const isValid = sqliteDb.verifyPassword(password, userRecord.password_hash);
+  if (!isValid) {
+    sqliteDb.recordFailedLogin(ip);
+    return res.status(401).json({
+      error: 'Incorrect password. Please verify and try again.',
+      code: 'INVALID_CREDENTIALS',
+    });
+  }
+
+  // Success
+  sqliteDb.resetFailedLogins(ip);
+  sqliteDb.recordSignIn(userRecord.id);
+
+  // Auto-upgrade to admin role if email matches ADMIN_EMAIL
+  if (userRecord.email.toLowerCase() === ADMIN_EMAIL && userRecord.role !== 'admin') {
+    sqliteDb.updateUserStatus(userRecord.id, 'active');
+    const updStmt = require('better-sqlite3')(path.resolve('data/mirai.db')).prepare(
+      `UPDATE users SET role = 'admin' WHERE id = ?`
+    );
+    updStmt.run(userRecord.id);
+    userRecord.role = 'admin';
+  }
+
+  const token = sqliteDb.createSession(userRecord.id, userRecord.email, userRecord.role, ip);
+
+  // Set HTTP-only cookie
+  res.cookie('mirai_session', token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
+  });
+
+  sqliteDb.addAuditLog({
+    action: 'user_login',
+    actorEmail: userRecord.email,
+    actorRole: userRecord.role,
+    details: `Successful sign in (@${userRecord.username})`,
+    ipHash: ip,
+  });
+
+  const safeUser = sqliteDb.getUserById(userRecord.id)!;
+  const isOwnerAdmin = safeUser.role === 'admin' && safeUser.email.toLowerCase() === ADMIN_EMAIL;
+
+  res.json({
+    success: true,
+    user: safeUser,
+    token,
+    isAdmin: isOwnerAdmin,
+  });
+});
+
+// Check Current Session Status
+app.get('/api/auth/me', (req: Request, res: Response) => {
+  const user = (req as any).user;
+  if (!user) {
+    return res.json({ authenticated: false, user: null, isAdmin: false });
+  }
+
+  const isOwnerAdmin = user.role === 'admin' && user.email.toLowerCase() === ADMIN_EMAIL;
+  res.json({
+    authenticated: true,
+    user,
+    isAdmin: isOwnerAdmin,
+  });
+});
+
+// Logout
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  const token = (req as any).token || getSessionToken(req);
+  if (token) {
+    sqliteDb.revokeSession(token);
+  }
+  res.clearCookie('mirai_session', { path: '/' });
+  res.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// Password Reset Flow
+app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+  const { identifier } = req.body;
+  if (!identifier) {
+    return res.status(400).json({ error: 'Email or username is required.' });
+  }
+
+  const user = sqliteDb.findUserByEmailOrUsername(identifier);
+  if (!user) {
+    // Return friendly generic response to prevent user enumeration
+    return res.json({
+      success: true,
+      message: 'If an account exists with those details, password reset instructions have been generated.',
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Account verified. You may proceed to reset your password.',
+    userId: user.id,
+    username: user.username,
+  });
+});
+
+app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+  const { identifier, newPassword } = req.body;
+  if (!identifier || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'Identifier and a new password of at least 6 characters are required.' });
+  }
+
+  const user = sqliteDb.findUserByEmailOrUsername(identifier);
+  if (!user) {
+    return res.status(404).json({ error: 'User account not found.' });
+  }
+
+  sqliteDb.updateUserPassword(user.id, newPassword);
+  sqliteDb.revokeAllUserSessions(user.id);
+
+  sqliteDb.addAuditLog({
+    action: 'password_reset',
+    actorEmail: user.email,
+    actorRole: user.role,
+    details: `Password reset for user @${user.username}`,
+    ipHash: hashIp(req),
+  });
+
+  res.json({ success: true, message: 'Password has been updated. Please sign in with your new password.' });
+});
+
+// ==========================================
+// 2. WATCH HISTORY & CONTINUE WATCHING APIS
+// ==========================================
+
+// Get user's active continue watching items
+app.get('/api/history/continue', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const history = sqliteDb.getContinueWatchingAnime(user.id, 20);
+  res.json({ history });
+});
+
+// Get user's full watch & read history
+app.get('/api/history', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const history = sqliteDb.getWatchHistory(user.id, 50);
+  res.json({ history });
+});
+
+// Get episode watch status for a specific anime
+app.get('/api/history/anime/:animeId', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const animeId = parseInt(req.params.animeId, 10);
+  if (isNaN(animeId)) {
+    return res.status(400).json({ error: 'Invalid animeId' });
+  }
+
+  const statusMap = sqliteDb.getEpisodeWatchStatus(user.id, animeId);
+  res.json({ watchedEpisodes: statusMap });
+});
+
+// Save / update watch progress
+app.post('/api/history', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const {
+    animeId,
+    animeTitle,
+    animeCover,
+    episodeNumber,
+    episodeTitle,
+    progressSeconds,
+    totalDurationSeconds,
+    totalEpisodes,
+    mediaType,
+  } = req.body;
+
+  if (!animeId || episodeNumber === undefined) {
+    return res.status(400).json({ error: 'animeId and episodeNumber are required.' });
+  }
+
+  const record = sqliteDb.upsertWatchProgress({
+    userId: user.id,
+    mediaType: mediaType || 'ANIME',
+    animeId: Number(animeId),
+    animeTitle: animeTitle || 'Anime Series',
+    animeCover: animeCover || '',
+    episodeNumber: Number(episodeNumber),
+    episodeTitle: episodeTitle || `Episode ${episodeNumber}`,
+    progressSeconds: Number(progressSeconds) || 0,
+    totalDurationSeconds: Number(totalDurationSeconds) || 1440,
+    totalEpisodes: Number(totalEpisodes) || 12,
+  });
+
+  res.json({ success: true, record });
+});
+
+// Delete specific anime from history
+app.delete('/api/history/:animeId', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const animeId = parseInt(req.params.animeId, 10);
+  if (isNaN(animeId)) return res.status(400).json({ error: 'Invalid animeId' });
+
+  const deleted = sqliteDb.deleteWatchHistoryItem(user.id, animeId);
+  res.json({ success: true, deleted });
+});
+
+// Delete specific episode from history
+app.delete('/api/history/:animeId/:episodeNumber', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const animeId = parseInt(req.params.animeId, 10);
+  const episodeNumber = parseInt(req.params.episodeNumber, 10);
+
+  const deleted = sqliteDb.deleteWatchHistoryItem(user.id, animeId, episodeNumber);
+  res.json({ success: true, deleted });
+});
+
+// Clear all watch history for current user
+app.delete('/api/history', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const cleared = sqliteDb.clearWatchHistory(user.id);
+  res.json({ success: true, cleared });
+});
+
+// ==========================================
+// 3. VISITOR ANALYTICS API (GENUINE TRACKING)
+// ==========================================
+
+app.post('/api/analytics/event', (req: Request, res: Response) => {
+  const { path, eventType, targetId, targetTitle, category, metadata, sessionId } = req.body;
+  if (!path || !eventType) {
+    return res.status(400).json({ error: 'path and eventType are required' });
+  }
+
+  const ip = hashIp(req);
+  sqliteDb.recordVisitorEvent({
+    ipHash: ip,
+    path,
+    eventType,
+    sessionId,
+    targetId,
+    targetTitle,
+    category,
+    metadata,
+  });
+
+  res.status(201).json({ status: 'recorded' });
+});
+
+// ==========================================
+// 4. OWNER-ONLY ADMIN APIS (requireAdmin)
+// ==========================================
+
+// Dashboard Real-time Overview Statistics
+app.get('/api/admin/overview', requireAdmin, (_req: Request, res: Response) => {
+  const stats = sqliteDb.getAdminDashboardStats();
+  res.json({
+    success: true,
+    adminEmail: ADMIN_EMAIL,
+    stats,
+  });
+});
+
+// Admin User Directory
+app.get('/api/admin/users', requireAdmin, (req: Request, res: Response) => {
+  const { search, status } = req.query;
+  const users = sqliteDb.listUsers(search as string, status as string);
+  res.json({ success: true, users });
+});
+
+// Admin Update User Status (Suspend / Reactivate)
+app.post('/api/admin/users/:id/status', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (status !== 'active' && status !== 'suspended') {
+    return res.status(400).json({ error: 'Status must be active or suspended.' });
+  }
+
+  const success = sqliteDb.updateUserStatus(id, status);
+  if (!success) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const admin = (req as any).user;
+  sqliteDb.addAuditLog({
+    action: 'user_status_updated',
+    actorEmail: admin.email,
+    actorRole: 'admin',
+    target: id,
+    details: `Updated user status to '${status}'`,
+    ipHash: hashIp(req),
+  });
+
+  res.json({ success: true, message: `User status changed to ${status}.` });
+});
+
+// Admin Visitor Analytics Telemetry
+app.get('/api/admin/analytics', requireAdmin, (_req: Request, res: Response) => {
+  const analytics = sqliteDb.getVisitorAnalytics();
+  res.json({ success: true, analytics });
+});
+
+// Admin Real-Time Audit Logs
+app.get('/api/admin/audit-logs', requireAdmin, (_req: Request, res: Response) => {
+  const stats = sqliteDb.getAdminDashboardStats();
+  res.json({ success: true, auditLogs: stats.auditLogs });
+});
+
+// Admin Media Catalog
+app.get('/api/admin/content', requireAdmin, (_req: Request, res: Response) => {
+  const overrides = db.getContentOverrides();
+  res.json({
+    anime: FALLBACK_SPOTLIGHT.concat(FALLBACK_TRENDING.slice(4)),
+    manga: MANGA_DIRECTORY_POOL,
+    overrides,
+  });
+});
+
+// Admin Settings
+app.get('/api/admin/settings', requireAdmin, (_req: Request, res: Response) => {
+  res.json({ settings: db.getSettings() });
+});
+
+app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
+  const update = req.body;
+  const updated = db.updateSettings(update);
+  res.json({ success: true, settings: updated });
+});
+
+// ==========================================
+// 5. PUBLIC CLIENT-SIDE APIs FOR MIRAI
+// ==========================================
+
+app.get('/api/public/announcements', (_req: Request, res: Response) => {
+  const all = db.getAnnouncements();
+  const active = all.filter((a) => a.enabled);
+  res.json({ announcements: active });
+});
+
+app.get('/api/public/settings', (_req: Request, res: Response) => {
+  const settings = db.getSettings();
+  res.json({
+    websiteName: settings.websiteName,
+    maintenanceMode: settings.maintenanceMode,
+    maintenanceNotice: settings.maintenanceNotice,
+    allowRegistrations: settings.allowRegistrations,
+  });
+});
+
+// ==========================================
+// 6. STATIC / VITE INTEGRATION
+// ==========================================
+
+async function startServer() {
+  if (!isProduction) {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.resolve('dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`MIRAI Full-Stack Server running at http://0.0.0.0:${PORT}`);
+    console.log(`Administrator email configured: ${ADMIN_EMAIL}`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+});

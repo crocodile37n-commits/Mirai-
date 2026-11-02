@@ -1,0 +1,424 @@
+# MASTER IMPLEMENTATION PROMPT — MIRAI: COMPLETE VISUAL & EXPERIENCE RESET (DESKTOP + MOBILE)
+
+You are the AI Builder. You will update an **already-built** anime and manga website called **Mirai**. Do **not** rebuild its architecture. Reproduce the reference designs described below as closely as technically possible, give the site a completely fresh, newly-launched appearance with a clean initial state, and implement the manga experience from the Version 80 specification.
+
+You will **not** receive the screenshots. Everything visible in them is written here. Follow it literally. Do not substitute your own design interpretation.
+
+**Confidence tags (used throughout)**
+- **[C]** Confirmed: visible in a screenshot, or explicitly stated in Version 80 ("V80").
+- **[E]** Estimate: measured from scaled screenshots. Start here, then tune visually.
+- **[U]** Unclear / not visible: choose the most conservative option, keep it minimal, and list it in your final report. Never present a [U] item as confirmed.
+
+**Source-of-truth order**
+1. Visuals: reference screenshots win over V80 wherever they differ.
+2. Manga functionality: V80 wins. **No manga screenshots (desktop or mobile) were provided**, so manga screens reuse the visual language below.
+3. Existing working code, backend, APIs, database, auth and routing: preserved unless V80 requires a change.
+
+---
+
+## 1. PROJECT OVERVIEW
+
+Mirai is a premium dark anime streaming + manga reading platform. Desktop and mobile are separate, deliberately designed experiences; the mobile site is **not** a compressed desktop site.
+
+**Goals**
+1. Complete visual and experience reset to match the references (desktop and mobile).
+2. Clean, fresh initial state: no personal/user-specific content visible (Sections 13–14).
+3. Manga Directory, detail page, chapter list and reader per V80 (Sections 7–10).
+4. Preserve all working functionality, integrations and data (Section 15).
+
+**Naming conflict [C]:** screenshots show the wordmark **"Aniclover"** (cherry-blossom logo: "Ani" white, "clover" pink; footer "© 2026 Aniclover"; URLs like `aniclover.cc/anime/210482`). V80 calls the product **Mirai** with a violet "Mi/rai" wordmark. **Keep the existing brand assets, strings and logo; do not rename or replace them** and do not introduce the V80 wordmark. Report this conflict.
+
+**Data-source conflict [C]:** footer links say "AniList API" / "GraphQL Endpoint", while V80 §21 says Jikan v4. **Do not change data providers.** Use what the site already uses. Data that no provider supplies (chapters, page images, views, scanlator groups, country, community posts) comes from the existing backend; if none exists, use a clearly separated adapter and tell the owner.
+
+**Routes seen [C]:** `/anime/{id}` (detail), `/watch/{id}/{episode}` (player). Keep existing route structures.
+
+---
+
+## 2. COMPLETE WEBSITE VISUAL RESET
+
+Make it look like a newly launched product while keeping the codebase.
+
+1. Rebuild the visual layer on shared design tokens (Section 11): colours, type, radii, glass surfaces, buttons, chips, cards, toggles, inputs, section headers, empty states.
+2. Restyle every screen to its reference (Sections 4–10). Replace old visuals; keep logic.
+3. Remove stale personal/demo content from visible UI (Sections 13–14).
+4. Remove leftover old styles, unused components and dead assets after the migration; do not leave two competing design systems.
+5. Fix layout defects seen in the references [U, verify they are real]: ~150–250px of empty black space beneath the footer on desktop pages; desktop content/footer rules stopping ~140px short of the right edge (width/overflow mismatch); on mobile a blank vertical gap between the Audio row and the episode list on the Watch page; header text bleeding unreadably through the translucent mobile header (see 5.2).
+
+### Cyberpunk correction [C]
+The Cyberpunk: Edgerunners hero image in the references is **dynamic content** (the featured title's banner art and title logo), **not the site theme**. The actual visual language of the references is: near-black neutral surfaces, hairline borders, white pill CTAs, translucent glass pills, one restrained lilac/violet accent, bold geometric headings, poster art carrying all the colour.
+- **Do not** add neon colours, glowing borders, scanlines, glitch effects or futuristic decoration anywhere.
+- The **only** decorative background in the references is the soft indigo→near-black gradient with faint grid and thin flowing wave lines behind the auth modal (Section 6.7). Keep that subtle and confined to auth.
+
+---
+
+## 3. REFERENCE SCREENSHOT ANALYSIS (every screenshot)
+
+### Desktop references (D1–D15)
+| ID | Screen | What it establishes |
+|---|---|---|
+| D1 | Home, full page (Bleach spotlight) | Section order; hero; genres strip; rails; Top 10; footer |
+| D2 | Home, rail with hover preview (Jujutsu Kaisen) | Poster card, hover play pill, preview card, rail arrows |
+| D3 | Navbar crop over banner art | Floating glass groups, active pill |
+| D4 | Browse (48 anime grid) | Toggle, search, Safe/Mature panel, 6-col grid |
+| D5 | Profile → Edit Profile | Profile shell, form, password section |
+| D6 | Profile → Continue Watching | 4 cards, scrolled header bar |
+| D7 | Profile → Settings | Sectioned settings card, toggles |
+| D8 | Anime Detail | Banner, poster, info, episodes, characters, recommendations |
+| D9 | Watch, source-switch toast state | Toast, player, sidebar |
+| D10 | Watch, idle (play overlay) | Player overlay, controls |
+| D11 | Watch, player settings menu open | Quality/Speed/Volume/Subtitles/Auto-skip menu |
+| D12 | Watch, playing with menu open | Same menu over playing video, sidebar scrolled |
+| D13 | Schedule (Saturday) | Day tabs, date chip, alternating timeline |
+| D14 | Favorites / My Watchlist (empty) | Empty state |
+| D15 | Home hero (Cyberpunk spotlight, zoomed) | Exact hero/navbar anatomy |
+
+### Mobile references (M1–M9)
+| ID | Screen | What it establishes |
+|---|---|---|
+| M1 | Home top (Tougen Anki spotlight) | Mobile header, hero fan, genres strip, section header, floating tab bar |
+| M2 | Home rails (Trending, All Time Popular) | Mobile card size, header row, rails |
+| M3 | Watch page | Mobile player, strip, AUDIO row, episode list |
+| M4 | Anime Detail top | Centred poster, stacked buttons, title |
+| M5 | Anime Detail middle | Chips, genres, synopsis |
+| M6 | Anime Detail, Characters | Single-column character list |
+| M7 | Anime Detail, You Might Also Like | 2-column recommendations |
+| M8 | Create Account modal | Auth sign-up |
+| M9 | Sign In modal | Auth sign-in |
+
+All mobile screenshots show the **logged-out/guest state** (white user-plus pill in the header). They also contain the phone's browser chrome (status bar, URL bar, bottom browser toolbar); that is **not** part of the site, only context.
+
+---
+
+## 4. EXACT DESKTOP UI REQUIREMENTS (D1–D15)
+
+Tokens are in Section 11. Sizes are [E] at a ~1500px-wide viewport.
+
+### 4.1 Navbar (D3, D15, D14) [C]
+Not a solid bar. **Floating groups** in a ~64px row, ~30px side padding, groups start ~10px from the top:
+- **Logo** left, ~105×35px.
+- **Nav pill group:** dark glass pill (~467×34–36px) starting ~x=232, five items **Home · Manga · Browse · Schedule · Favorites**, each with a small leading line icon (house, open book, compass, calendar, heart); 13px/600; inactive `--text-2`; **active** = inner pill with lighter fill (`rgba(255,255,255,.10)`), hairline border, **white bold** text.
+- **Search pill:** dark glass (~324×32px) starting ~x=798: magnifier, placeholder **"Search anime & manga..."**, far right a small rounded-square **"/"** key badge. `/` focuses it.
+- **Utility buttons:** three circular glass buttons (~34–38px): **eye** (content visibility), **bell**, **avatar** (logged-in) — for guests the avatar is replaced by the **white "Sign Up" pill** with a user-plus icon (V80 §2).
+- **Scrolled state (D6):** groups remain glass; a full-width translucent bar (`rgba(0,0,0,.55)` + blur 16px + 1px bottom hairline) appears.
+
+### 4.2 Home (D1, D2, D15) [C]
+Order: Hero → Genres strip → [Resume Watching → Quick Watchlist, **only for signed-in users with data/see Section 13**] → Trending This Week → All Time Popular → New Season Arrivals → Action Zone → Romance & Drama → Highest Rated Gems → Top 10 Charts → Footer.
+
+**Hero (D15):** full-bleed, ~one viewport tall (~600–650px); banner art darkened (~45% overlay) with bottom gradient to the page background and soft vignette. Top-left a short white line + tiny tracked uppercase **"SPOTLIGHT / 0N"**; top-right **"10 TOTAL"**. **Card fan** (centre): focused poster ~140×190 with ~2px light border, ~16px radius, strong shadow; 3–4 cards per side, overlapping, progressively smaller/dimmer, rotated outward (≈ ±6° nearest, up to ≈ ±15–20° farthest). Below: small bordered rectangular chip **"● ONA"** + plain tracked text **"SCORE — 83%  |  10 EP  |  2026"**; **title logo image** (e.g. coloured logo) ~50–60px tall; genres **"ACTION — DRAMA — SCI-FI"**; buttons **"▶ WATCH NOW"** and **"BROWSE CATALOGUE"** (glass pills, ~36–40px tall, ~150–170px wide, 11px/700 uppercase, tracking ~0.1em), always visible. A giant faint decorative slide-index numeral (e.g. "04") sits bottom-right, cropped. Fallback when no logo image exists: bold sans title in the heading font (**no serif**: V80's serif is not confirmed by any screenshot [U]).
+
+**Genres strip:** thin band under the hero: purple-tinted **"GENRES"** label pill + icon, chevron, scrolling row of small dark chips (~26px; Action, Adventure, Comedy, Drama, Fantasy, Horror, Isekai, Magic, Mecha, Music, Mystery, Psychological, Romance, Sci-Fi, Slice of Life, Sports, Supernatural), chevron.
+
+**Resume Watching:** eyebrow "CONTINUE WATCHING", H2 "Resume Watching", right "N in progress"; landscape 16:9 cards (~230×128) with "EP N" badge, title and "Episode N • …" subline; V80 adds a thin progress bar under the image.
+
+**Quick Watchlist:** eyebrow "SAVED FOR LATER", H2, "Open Watchlist" pill; empty state = hairline panel (~80px) with "Your watchlist is empty." + "Browse Catalog" pill.
+
+**Rails (six):** eyebrow/title pairs **TRENDING NOW / Trending This Week**, **MOST POPULAR / All Time Popular**, **FRESH THIS SEASON / New Season Arrivals**, **HIGH ENERGY / Action Zone**, **STORIES TO FEEL / Romance & Drama**, **COMMUNITY PICKS / Highest Rated Gems**; header right: muted "N titles" + "View All" pill (dark, hairline, ~34px). ~7 cards visible + 8th clipped, gap ~22px; circular glass chevrons (~38px) on the row edges, left hidden at start; ~64px between sections.
+**Data check [U]:** in D1, four rails show largely identical titles and "Romance & Drama" contains action titles; verify each rail uses its own query/filter. Do not fabricate data.
+
+**Poster card + hover (D2):** poster ≈152×214 (≈5:7) in rails, ≈2:3 in Browse; radius ~16–18; glass **"#N" rank pill** top-left; glass circular **heart** (~30px) top-right; hover shows centred **"▶ Play"** glass pill. Below: bold 13px title (1 line, ellipsis) and meta row (format left, ★ score centre with gold star, "N EP"/"ONGOING"/"1 EP" right; 11px uppercase). **Hover preview** (rails only, after ~300ms intent): ~285×320 dark card, radius ~16, hairline + strong shadow; ~85px darkened banner strip with overlapping ~52×75 poster thumb and bold uppercase title; "★ 8.4 • TV • 2020"; ≤3 genre chips; 4-line description; hairline; "▶ Click to view details". Not on touch. Fetch on hover intent, cache, cancel on leave. Hover lift (V80: scale 1.04, brighter border) [E].
+
+**Top 10 Charts:** accent-bar heading; **three columns** (Trending [red flame], Most Popular [chart], Top Rated [gold trophy]) × **10 rows** (V80's "4 rows" is overridden by D1): ~58px dark rows, big rank numeral "01"–"10" (01–03 amber-tinted [U]), 40×56 thumb, bold title, "TV • 12 Ep • ★ 86%", uppercase genres.
+
+### 4.3 Browse (D4) [C]
+~1180px container. Anime|Manga segmented toggle (active = solid white, black text, icon) → full-width glass search input + "▼ Filters" pill → Safe/Mature panel (left bold "Safe anime" + "Adult titles are hidden"; right segmented "Safe" (white, shield) / "18+ Mature") → accent-bar "Discover Anime" + "48 anime shown" → **6-column grid**, gap ~16px, cards with heart only (no rank pill).
+
+### 4.4 Profile area (D5, D6, D7) [C]
+Soft purple radial glow behind the top (≤0.35 opacity, static). Left sidebar card ~250px wide, radius ~24: ~100px avatar with ring + camera badge, username + "Lv.N" chip, "Member since YEAR", thin progress bar + caption, stats trio (EPISODES / FAVORITES / COMMENTS), menu (Profile, Continue Watching, Favorites, Notifications, Connections, Settings; active = lighter fill + 2px white right-edge indicator). Main ~920px.
+- **Edit Profile:** 3 stat cards (trophy / play-circle / trend-arrow with purple icons), avatar card ("✎ Change Avatar"), DISPLAY NAME + EMAIL (green "✓ Verified" pill), MEMBER SINCE read-only, "Change Password" with TEMPORARY PASSWORD (DISCORD SIGN-IN) + "GENERATED" chip + "Copy" pill, NEW/CONFIRM PASSWORD with eye toggles, white "Save Changes" pill with disk icon right-aligned.
+- **Continue Watching:** "N anime in progress"; 4-up cards (~170px) with portrait poster + caption (bold title, "**EP 1** / 12").
+- **Settings:** one large solid card with sections PLAYBACK, PRIVACY, LANGUAGE (English/Japanese segmented), CONNECTED ACCOUNTS (Discord + blurple #5865F2 "Connect Discord"), NOTIFICATIONS (multi-select "Ignore folders"; single-select "Ignore audio type" None/SUB/DUB), and a full-width dark-red "Log Out" bar. Toggle ON = white track + black knob right; OFF = dark grey track + muted knob left.
+- **All sample values in these screenshots (username, email, member-since date, "Ani-2X5DGT") are old user data and must never appear** (Section 14).
+
+### 4.5 Anime Detail (D8) [C]
+Full-bleed banner (~310px) with gradient to black; poster ~195×290 overlapping, hairline border; title 38–40px/800 (two lines), alt title in `--text-2`; chips (★ rating [outlined, brighter], year, format, "N eps released", RELEASING) and genre chips; synopsis (14.5px, line-height 1.75). Left column: "▶ Play Episode 1", "+ Add to List" dark pills; **ANIME INFO** key/value rows (Format, Studio, Episodes, Duration, Season, Native Title). Right: **SELECT EPISODE** (count + "1–12 of N"), "Find episode 1–N" search, "Episodes 1–12 ⌄" range selector with chevrons, outlined episode pills (8/row), **CHARACTERS** 3-column (50px circular avatars; purple-tinted "NO IMAGE" placeholder), **YOU MIGHT ALSO LIKE** 5-column posters.
+
+### 4.6 Watch (D9–D12) [C]
+Two columns: player ~61%, sidebar ~360px (V80's 70/30 is overridden). Player: rounded 14px box, hairline; idle overlay = 58px glass play button + "EP 1" + episode title; progress bar with **two gold skip segments** and a small round avatar thumb; control row (replay-10, play, forward-10, time; volume, PiP, fullscreen; gear top-right). **Settings menu (D11/D12):** ~233px dark glass panel under the gear: Quality (360p ›), Speed (Normal ›), Volume Boost (Off ›), Subtitles (English ›), Auto-skip (toggle). **Toast (D9):** glass card top-left, shuffle icon chip, "Source automatically switched" + "Hindi audio is not available for Episode 1. Playing default HD stream (Server 1)." Strip below: Theater, AutoPlay, AutoNext, SUB|DUB|HINDI, Prev/Next, Bookmark. Info block (title, meta, "Anime Info" pill, 3-line synopsis + "▼ Show More"), **Discussion** card (textarea, white "Submit Comment"). Sidebar: episode list (range chip, "Filter episodes…", eye + image buttons; rows with 118×66 thumb, "EP N" badge, green watched tick, bold title, 2-line description, "CC" chip, ★, date; active = outlined) with pinned "Episode 19 in 6d 1h · Thu, Nov 5, 20:56" countdown; **MORE LIKE THIS** 2×2 posters + "Show All Recommendations ⌄". The player shows 360p quality in the menu: check default-quality logic, do not change providers [U].
+
+### 4.7 Schedule (D13) [C]
+Centred calendar icon + **"Weekly Airing Schedule"** (bold ~24–28px) and subtitle **"Find out when new episodes of your favorite anime are airing this week."** **7 day pills Sunday→Saturday** (active = solid white, black bold; others dark outlined) each with a small count badge (real counts; numbers unreadable in the reference [U]). Centred date chip **"Saturday, Oct 31"**. **Vertical timeline:** thin centre line with hollow circular nodes; cards **alternate sides**; opposite side shows large time **"05:00 JST"** (~18–20px/800) with tiny tracked caption **"AIRING EVENT"**. Card (~330px, radius ~14, hairline): portrait thumbnail ~55×80 (radius 8), clock + **"04:30 JST"**, bold title, "Episode N", ≤2 uppercase genre chips, 2-line description ("No description available." when missing). Fade + slide-up on scroll, once.
+
+### 4.8 Favorites (D14) [C]
+Accent-bar heading **"My Watchlist"**; centred ~90px dark circular badge with muted lilac open-folder icon; **"Your Watchlist is Empty"** (bold ~20px); **"Explore our vast catalog of anime and add your favorites to keep track of them here."**; dark pill **"🔍 Browse Anime"**. Populated (V80 §12): Browse-style grid with filled-heart toggle, tabs **All / Anime / Manga**, sort dropdown (Recently Added / A–Z / Rating).
+
+### 4.9 Footer [C]
+Hairline top border; 4 columns (brand ~35%): logo + "Your premium destination for streaming anime and reading manga. Discover trending series, track your watchlist, and explore stories in pristine HD." + circular Discord button; **EXPLORE ANIME** (Trending Now, Most Popular, Top Rated, Airing Schedule, Genre Directory); **MANGA & MEDIA** (Manga Reader, Anime Movies, TV Shorts & OVAs, My Watchlist, User Profile); **DATA & COMMUNITY** (AniList API, GraphQL Endpoint, Community Guidelines, Create Free Account). Headings 12px/800 uppercase; links 13px `--text-2`. Second hairline; "© 2026 **Aniclover**. Designed for anime & manga enthusiasts." left; tiny centred two-line disclaimer "Disclaimer: … does not store any files on its server. All contents are provided by non-affiliated third parties."; "↑ Top" pill right. Add a "Mirai Community" link only if a Community feature exists [U].
+
+---
+
+## 5. EXACT MOBILE / PHONE UI REQUIREMENTS (M1–M9)
+
+The references were captured at ~2–2.4× pixel density on phones of roughly 360–412 CSS px width [U]. Values below are given as **fractions of viewport width** (reliable) with px estimates for a **~390px** viewport [E].
+
+### 5.1 Mobile header (M1–M7) [C]
+- Left: logo (~100–115px wide).
+- Right: three **circular glass buttons** (~42–46px at 390): **search** (magnifier), **eye**, **bell** (bell may appear dimmed when no notifications), then a **white pill** with a **user-plus icon** (guest sign-up; ~56px wide, no text visible [E]). No separate nav links in the header.
+- On the hero (M1) the header is **transparent** over the artwork. After scrolling (M2, M4–M7) it becomes a **translucent bar** (dark, blurred, 1px bottom hairline).
+- In the references, text scrolling beneath the header remains faintly visible through it. Replicate the translucent-glass look, but use enough blur/opacity (e.g. `rgba(6,6,7,.72)` + `blur(16px)`) that underlying text is not legible/overlapping; flag this choice to the owner [U].
+
+### 5.2 Floating bottom tab bar (M1–M7) [C]
+A **floating pill bar** (not edge-to-edge) fixed to the bottom with ~14–16px side margins and ~10–12px bottom offset plus `env(safe-area-inset-bottom)`; ~56–64px tall [E]; fully rounded (~32px); dark glass (`rgba(18,18,21,.7)` + blur) with 1px hairline; content scrolls **underneath** it. Five equal items: **Home, Manga, Browse, Schedule, Favorites**, each a **filled icon above a ~11–12px label**. **Active** item: white icon + white bold label (Home in M1/M2). Inactive: muted lilac-grey. Reserve bottom padding on every page so the last content is never hidden under the bar. Touch targets ≥ 44px.
+
+### 5.3 Mobile Home (M1, M2) [C]
+**Hero (M1):** background is the spotlight art, **heavily blurred and tinted** (strong red tint for Tougen Anki) [E], fading to near-black at the bottom. **Card fan:** a focused poster at the horizontal centre (~24% of viewport width, ratio ~5:7, **~2–3px white/light border**, ~14px radius) flanked by **~3 rotated, overlapping, dimmed posters on each side** that **bleed off both screen edges**; fan sits right under the header. Below: small bordered rectangular chip **"● TV"** + **"SCORE — 72%  |  12 EP  |  2026"** (tracked uppercase, ~11px); **title logo image spanning ~80–90% of the width** (fallback: bold sans); genres **"ACTION — MYSTERY — SUPERNATURAL"** (~11px tracked); **two glass pills side by side** — **"▶ WATCH NOW"** and **"BROWSE CATALOGUE"** — together spanning the content width (each ~42–44% of width, ~36–40px tall, 11px/700 uppercase). Hero ≈ 60–65% of a phone screen height [E]. No "SPOTLIGHT / 0N" label or numeral is visible on mobile [U]: omit unless already present.
+
+**Genres strip:** a **rounded container** (radius ~20–22, 1px hairline, dark fill) spanning the content width (~20px margins) holding a **purple compass icon + "GENRES" in bold lilac uppercase**, followed by a **horizontally scrolling row of larger outlined pill chips** (Isekai, Magic, Mecha, Music … clipped at the right edge with a fade). No chevron buttons on mobile.
+
+**Section header (M1, M2):** eyebrow (e.g. "TRENDING NOW", ~11px/700, tracked, lilac-grey), **H2 ~28px/800** ("Trending This Week"). Under/next to the title: **"12 titles"** (muted) and a **"View All" pill** (dark, hairline, ~34–36px). Layout is a **wrapping flex row**: when the title is short (M2 "All Time Popular") the count and button sit on the same line (button ends at the right edge); when the title is long (M1) the count + button wrap to a second line, **left-aligned** under the title. Section gap ~64–72px.
+
+**Rails:** horizontal swipe (scroll-snap, hidden scrollbar). Left padding ~20px. **Card width ≈ 28% of viewport (~110px at 390)**, **gap ≈ 6% (~24px)**, so ~2.7 cards are visible and the third is clipped [C]. Card ratio ≈ 5:7, radius large (~12–14px), hairline border. **Rank pill "#N"** (glass, top-left, ~26px high) and **heart** (glass circle ~26px, top-right). Title: bold, ~12–13px, **1 line with ellipsis** ("The Apothec…", "STEEL BALL …"). Meta row: **format left, ★ score centre (gold), "N EP" right**, ~11px, muted. No hover preview or "Play" pill on touch. Mobile guest Home shows **Hero → Genres → Trending This Week → All Time Popular …**; **no Resume Watching or Quick Watchlist** [C].
+
+### 5.4 Mobile Anime Detail (M4, M5, M6, M7) [C]
+- **Banner:** full-width blurred/zoomed art (~190–220px tall at 390 [E]) with a dark bottom hairline/gradient.
+- **Poster:** **centred**, ~35% of viewport width, ratio ~5:7, hairline border, large radius (~20–24px), **overlapping the banner's bottom edge**.
+- **Buttons:** stacked, **centred**, each ~44–46% of viewport width (≈ 175px) and ~40px tall: **"▶ Play Episode 1"** and **"+ Add to List"** (dark pills with hairline).
+- **Title:** **centred**, bold heading font, ~24–26px, as supplied by data (all-caps appears only because the source title is capitalised), wraps over 4 lines. **Alternate title** below, centred, muted lilac-grey (~17–18px).
+- **Chips (M5):** **centred, wrapping rows**: ★ 8.6 (white outline), 2026, ONA; next row "6 eps released", "RELEASING" (white text on mobile; do not force green here [E]). **Genre chips** centred, wrapping (Action, Adventure, Drama / Mystery, Supernatural), 14px.
+- **Synopsis:** **centre-aligned**, ~15px, line-height ~1.75, muted lilac-grey, clamped (fades out at the bottom; show a "Show More" control) [E].
+- **Episodes (M3 implies pill list, not shown in detail) [U]:** reuse the desktop episode-pill pattern, wrapped in a compact grid.
+- **CHARACTERS (M6):** accent-bar heading "CHARACTERS"; **single-column list**; each row **~90px circular avatar** (hairline border) + **name (bold white, ~17px)** + **role in uppercase tracked lilac-grey ("MAIN"/"SUPPORTING", ~13px)**; ~28px row spacing.
+- **YOU MIGHT ALSO LIKE (M7):** accent-bar heading; **2-column grid** (gap ~16px) of poster cards (ratio ~2:3, radius ~14–16px) with a glass heart top-right; title (1 line ellipsis, bold) and meta row (TV • ★ score • N EP).
+- The floating tab bar overlays the bottom throughout.
+
+### 5.5 Mobile Watch (M3) [C]
+Top to bottom:
+1. Header (as 5.1).
+2. **Player card:** rounded (~16px) box, hairline, nearly full width (~12px margins), ~16:9. Gear icon top-right. Centred: ~46px glass play button; "EP 1" (bold) and the episode title (centre, ≤2 lines, ~12px, `--text-2`). Thin progress bar with gold skip segments and small round avatar thumb; control row: replay-10, play, forward-10, "00:15 / 48:44" (left); volume, PiP, fullscreen (right).
+3. **Control strip** (bottom of the same card, hairline above): **AutoPlay**, **AutoNext** (outlined toggle pills with icons), then **Prev** (dim when disabled), **Next**, far right **"♡ Bookmark"**. **No Theater button on mobile.**
+4. **AUDIO row:** separate rounded panel: headphones icon + **"AUDIO"** (lilac, uppercase, tracked) on the left; on the right a **3-segment control** with icons: **[CC] SUB** (selected: lighter fill + border), **[mic] DUB**, **[speaker] HINDI**.
+5. **Episode list inline below** (V80's "bottom sheet/drawer" is overridden by M3): row of **range chip "1 - 6"**, **"Filter episodes…"** pill input, **eye** and **image** circular buttons; below, rows (~110px): ~118px-wide thumbnail with **"EP N" badge** and green watched tick, **bold title** (1 line, ellipsis), 2-line muted description, **"CC" chip + ★ rating (e.g. 9.30) + date ("Mar 19, 2026")**; the active row has a hairline outline. List has an internal thin scrollbar.
+6. Info/Discussion/More Like This follow below (not shown) [U]: stack the desktop blocks full-width in the same order.
+
+### 5.6 Mobile Auth (M8, M9) [C]
+Centred modal panel (~85–88% of viewport width, max ~380px): near-black translucent card (`rgba(14,14,18,.9)`, hairline border, radius ~20), over an **indigo→near-black gradient background with a faint grid and thin, translucent flowing wave lines** (the only decorative backdrop).
+- **Create Account (M8):** at the top a full-width **Discord-blue button** (partially visible, label not visible [U]) → divider **"OR CONTINUE WITH EMAIL"** (tiny, tracked uppercase, with hairlines) → **H "Create Account"** (bold ~22px) → subtitle **"Join Aniclover to sync watchlist & track progress."** (muted, ~12px) → **"LIVE AVATAR" row**: small avatar (random generated), label "LIVE AVATAR" (tiny uppercase muted) + name **"Custom Otaku"** (bold), and a **"🎲 Roll"** pill at the right (re-rolls the generated avatar/name) → labelled fields (uppercase micro-labels ~10–11px): **USERNAME** (person icon, placeholder "e.g. AnimeFan99"), **EMAIL ADDRESS** (envelope, "you@example.com"), **PASSWORD** (lock, "Min. 6 characters", eye toggle), **CONFIRM PASSWORD** (shield, "Re-enter password", eye toggle); field height ~40px, radius ~12, dark fill, hairline → **white full-width "Create Account" button** (~40px, bold black text) → **"Already have an account? Sign In"** ("Sign In" bold underlined).
+- **Sign In (M9):** **"Welcome Back"** (bold ~22px) → subtitle **"Enter your credentials to access your library."** → **USERNAME OR EMAIL** (person icon, "Enter username or email") → **PASSWORD** (lock, masked, eye toggle) → white full-width **"Sign In"** → **"Don't have an account? Create Account"** (bold underlined link).
+- V80 §13 also lists "Forgot password?" and optional social icons, and a segmented "Sign In / Create Account" tab control; these are **not visible** in M8/M9 [U]. Keep them only if the existing auth already has them; otherwise omit.
+- Desktop auth is not captured; use the same panel centred, max ~400px [U].
+
+### 5.7 Mobile behaviour summary
+Swipeable rails with snap; no hover states; hearts always visible; floating tab bar; centred detail layouts; single-column characters; 2-column recommendation grids; inline episode list; AUDIO row separated from the control strip; auth in a centred modal.
+
+---
+
+## 6. HOMEPAGE AND NAVIGATION (summary of binding rules)
+
+- Desktop: floating-group navbar (4.1), hero as in 4.2/D15, section order as 4.2.
+- Mobile: transparent→translucent header with 4 right-hand controls (5.1), floating pill tab bar (5.2), hero fan bleeding off screen edges (5.3), rounded genres container, wrapping section headers, snap rails.
+- Guest vs signed-in states: guests see **Sign Up** (desktop pill with label; mobile white pill with user-plus), no Resume Watching, no Quick Watchlist (Section 13).
+- Navigation items and order are identical on both viewports: **Home · Manga · Browse · Schedule · Favorites**. Do not add or reorder items (do not add "Community" unless it already exists [U]).
+- Hero data (title logo, score %, episodes, year, genres, fan posters) must come from real data; no hard-coded titles.
+
+---
+
+## 7. MANGA DIRECTORY (V80 §4, §5, §15)
+
+### 7.1 Manga page (nav item "Manga") [C from V80]
+Mirrors Home in layout and visual style. Sections:
+1. **Hero spotlight carousel** — same component, manga cover art (taller/portrait covers; may include vertical JP/KR logotypes in the art). Meta line shows **type (MANGA / MANWHA / MANHUA)**, **rating**, **view count** instead of score/episodes.
+2. **Top Viewed Titles** — horizontal carousel with visible circular prev/next chevrons; under each title ★ rating + eye icon + view count.
+3. **Recently Added & Updated** — **3-column card grid** (not a scroll row), larger cards: **country-flag chip (JP/KR/CN)** top-left, **green pulsing "new chapter" dot** top-right, title, **"Read Latest Chapter"** link with book icon, and "Available"/clock status.
+4. **Popular & Trending** — grid using the Browse card (poster, title, format, rating, views).
+5. **Top Rated All-Time** — carousel with chevrons.
+6. Sidebar-style panel [U: V80 does not define contents; reuse an existing equivalent or omit] + Footer.
+
+### 7.2 Browse, Manga mode [C from V80]
+Anime|Manga pill toggle; search + "Filters" button (modal/drawer): Genre (multi-select pills), Year range, Status (Airing/Completed/Upcoming → map to manga statuses), Format, Sort (Popularity/Score/Newest/A-Z); **manga-only**: **Source toggle** (V80 names "Atsu" and "MangaBall" as examples [U: use only providers the site already integrates; do not add new scraping sources]) and **Format pills** (All / Manga / Manhwa / Manhua / OEL). Safe/Mature bar as in 4.3. Heading "Discover Manga" + "N manga shown". Grid: 6 → 4 → 2 columns; infinite scroll or "Load More" (keep what exists). Cards show country flag and chapter-status metadata.
+
+### 7.3 Manga card [C structure, style from poster card]
+Poster (default 2:3, variable allowed), radius ~12–16px, hairline; top-left flag chip (or rank pill in rails); top-right heart; new-chapter dot where applicable; below: title (1–2 line clamp) and meta row (format, ★ rating, views/latest chapter). Hover (desktop): lift + brighter border + heart fades in.
+
+### 7.4 Mobile manga directory [C from V80 §16; visuals inferred, no screenshot]
+Use the mobile card sizes of 5.3: rails ~28% width cards; Browse grid **2 columns**; Recently Added becomes **1–2 columns**; chevron carousels become swipe rails (arrows hidden). Hero as 5.3. Mark all visual choices not shown in screenshots as [U] in your report.
+
+---
+
+## 8. MANGA DETAIL PAGES (V80 §11)
+
+**Desktop:** breadcrumb **"‹ Manga library"**; format badge ("MANGA"/"MANWHA"); H1 title; meta row (★ rating, chapter count, view count, status pill); synopsis + **"▼ Show More"**; genre pills; three buttons: **"Read First (Ch. 1)"** (solid white), **"Read Latest (Ch. N)"** (outline), **"Chapters"** (ghost/icon-only, scrolls to the list); author/artist credit line. Layout follows D8 (banner with gradient, overlapping poster, accent-bar headings, chips, key/value info panel if data exists [U]).
+
+**Mobile [inferred from M4–M5 + V80 §16]:** poster **centred** over a blurred banner, **action buttons stacked full-width under the poster** (V80: "full-width action buttons"), centred title, chips and genre pills (wrapping), centred clamped synopsis with Show More; the info panel collapses into an **expandable "Info" accordion** (V80). Characters (if provided by the data source) as a single-column list as in M6.
+
+---
+
+## 9. MANGA CHAPTER ORGANISATION (V80 §11)
+
+Panel **"Chapters"** with total count; controls: **search-chapter input**, **sort-icon button** (asc/desc), **list/grid view toggle**. Rows: **chapter number**, **chapter title**, **scanlator-group tag + page count**, right-aligned **publish date** + chevron. **Pagination** (Prev · numbered pages with ellipsis · Next + "Page X of Y"), **mirrored above and below** long lists. Virtualise/paginate 300+ chapters (V80 §20). Row style: solid dark rows (`--bg-elevated`), hairline separators, 56–64px (desktop), larger touch rows ≥ 56px on mobile; hover brightens; read chapters dimmed; last-read row gets the same hairline outline highlight as the active episode row [U]. Clicking a row, "Read First" or "Read Latest" opens the reader at that chapter. Persist last-read chapter/page with the existing persistence; if none exists for manga, add minimal persistence and report it.
+
+---
+
+## 10. MANGA READING INTERFACE (V80 §11, §16)
+
+**Desktop:** minimal chrome. Top-left **"‹ Ch. 1 / 360 ›"** chapter navigator (prev/next arrows). **Full-bleed vertical-scroll page images**, centred, sized by zoom/fit. Bottom-left page counter + % progress. Bottom-right zoom controls (**− / fit-width / +**). **Fixed vertical icon rail** on the right (circular glass buttons): **home, library/book, chapter list, chat/comments (opens a chapter-discussion drawer), fullscreen, settings gear, next-chapter arrow**. Background near-black `#060607`.
+
+**Mobile:** default **horizontal-swipe, single-page mode**; **tap zones** (left/right thirds of the screen) for previous/next page; touch targets ≥ 44px; the tab bar is hidden while reading [U], controls appear on centre tap [U]; previous/next chapter controls remain reachable from the top navigator and at the end of each chapter.
+
+**Images:** lazy-load beyond the first 2–3 pages, preload the next 2; reserve space (dimensions/aspect ratio) to avoid layout shift; skeleton while decoding; failed page shows an "Image failed to load — tap to retry" tile; don't up-scale low-resolution pages unless the user zooms.
+
+**Not specified by V80 [U]:** RTL mode, double-page mode, keyboard shortcuts, auto-scroll, contents of the settings gear. Provide only what the existing reader already supports. Do not invent additional reader features.
+
+---
+
+## 11. TYPOGRAPHY AND DESIGN SYSTEM
+
+### 11.1 Tokens (V80 baseline, consistent with the references [E])
+```
+--bg-base:#060607  --bg-elevated:#0D0D10  --bg-elevated-2:#141417
+--border-subtle:rgba(255,255,255,.08)  --border-strong:rgba(255,255,255,.16)
+--text-primary:#F5F5F7  --text-secondary:#A1A1AA  --text-tertiary:#6B6B71
+--accent-primary:#8B5CF6  --rating-gold:#FBBF24  --status-live:#22C55E
+--danger:#EF4444  --discord:#5865F2
+```
+Muted text in the mobile references has a slight lilac tint (headings/labels like "MAIN", alternate titles, tab labels): allow `--text-secondary` to lean slightly lilac (e.g. `#A09CAE`) [E]. ~90% grayscale; violet only on the Genres label/icon, avatar, profile glow, stat icons, focus ring; gold stars; green for Verified/watched/live badges; red for Log Out/notification dot.
+
+### 11.2 Typography
+- **Headings, nav labels, titles, buttons:** geometric bold sans resembling **Montserrat** (600–800) [E/U: keep the project's existing font if it already matches].
+- **Body, forms, descriptions, meta:** **Inter** [E/U].
+- **No serif** anywhere (not confirmed by any reference).
+- Desktop scale [E]: section H2 36–40/800 (tracking −0.02em); page titles 24–26/800; detail title 38–40/800; card title 13/700; meta 11/500 uppercase; eyebrows 10–11/700 uppercase tracking .18em; body 14–15 (line-height 1.7); form labels 11/700 uppercase tracking .12em; nav 13/600.
+- Mobile scale [E]: section H2 ~28/800; eyebrow ~11; card title 12–13/700; meta 11; detail title 24–26/800 centred; body 15 (line-height 1.75); character name 17/600; role 13 uppercase tracked; tab labels 11–12; hero meta 11 tracked; auth title ~22/800, labels 10–11 uppercase.
+
+### 11.3 Shapes, spacing, materials
+- Radius: pills 999px; poster cards 12–18px; panels 16–24px; inputs 10–12px; player 14–16px; mobile tab bar ~32px.
+- 4px spacing base; desktop gutters ~30px, max width 1440; mobile gutters ~16–20px; section rhythm 64px desktop, ~64–72px mobile.
+- **Glass:** `background:rgba(255,255,255,.06); backdrop-filter:blur(16px) saturate(140%); border:1px solid rgba(255,255,255,.10); box-shadow:0 8px 32px rgba(0,0,0,.45);` for navbar groups, round icon buttons, hero buttons, rank/heart badges, tab bar, hover preview, toast, player menu. Solid dark (not blurred) for settings/profile cards and form fields. Provide a no-blur fallback (`@supports not (backdrop-filter)`). Keep blur ≤16px, don't stack many blurred layers over video.
+
+### 11.4 Components
+Accent-bar heading (3px × ~20px white bar + bold text); section header; poster card; chips; pill buttons (primary solid white/black text, secondary hairline, dark `--bg-elevated-2`); segmented toggle (active = solid white); toggle switch; inputs with leading icons; stat cards; episode/chapter rows; empty state (icon in dark circle + bold title + muted line + pill CTA); avatar (fallback initials on a violet gradient).
+
+---
+
+## 12. ANIMATION AND INTERACTION REQUIREMENTS
+
+Only these are confirmed or specified by V80; do not add more:
+- **Hero:** auto-advance every ~6–8s with crossfade + slight scale (1.0→1.03), ~600ms; pause on hover (desktop); manual control resets the timer; stop when the tab is hidden.
+- **Poster hover (desktop):** lift/scale ~1.04, border brightens, heart fades in, "Play" pill appears, 200ms ease-out, transform/opacity only; preview card after ~300ms intent.
+- **Rails:** desktop chevrons scroll by one page with smooth scrolling; mobile swipe with scroll-snap and ~10–15% peek.
+- **Buttons:** 120ms hover; pressed scale 0.97. **Segmented toggles:** sliding active background (~250ms).
+- **Dropdowns/modals/menus:** fade + scale-from-98% + slight upward origin, 150–200ms; backdrop fades.
+- **Schedule:** cards fade + slide-up 12px on scroll, staggered 60–80ms, once only.
+- **Skeletons:** shimmer sweep (1.5s loop) in real component shapes for all loading lists.
+- **Toasts:** slide in, auto-dismiss ~4s (player source-switch toast ~5s [U]).
+- **Mobile gestures:** rail swipe; reader swipe + tap zones (V80); tab bar taps.
+- Honour `prefers-reduced-motion` (keep only opacity fades).
+- Visible hover states for desktop beyond those listed are **not shown** in references [U].
+
+---
+
+## 13. CLEAN INITIAL WEBSITE STATE
+
+When the site launches fresh (first visit, no session) it must look like a new product:
+1. **Guest state**: header shows the **Sign Up** control (white pill; mobile = user-plus icon) — no avatar, username or profile (matches M1–M7).
+2. **Home for guests:** Hero → Genres → rails → Top 10 → Footer. **Hide Resume Watching and Quick Watchlist** (mobile references show none). For a signed-in user with no data, show the empty states from Section 4 (Quick Watchlist "Your watchlist is empty."; Favorites "Your Watchlist is Empty"; Continue Watching empty message [U: reuse the empty-state component]).
+3. **Notifications:** bell shows **no unread dot**; panel shows an empty state ("No notifications yet" [U wording]) — no fake notifications or welcome messages unless the real system generates them.
+4. **Counts:** comments "(0 Comments)", profile stats 0, watchlist empty, history empty.
+5. **Settings:** defaults only, no pre-filled personal values.
+6. **Recommendations/"For you"** must not depend on any old user's history; show only general (trending/popular) data.
+7. **No demo accounts, sample profiles, placeholder names/emails/passwords, or fake activity** anywhere in UI or seed data used by the visible app.
+8. **Use an appropriate clean development/demo state**, e.g. a fresh/empty test database or seed, a signed-out session, or a `FRESH_START`/demo feature flag. If a clean state requires clearing browser-side data (localStorage/IndexedDB/cookies) provide a **developer-only reset utility or documented steps**, never an automatic wipe for real visitors.
+
+---
+
+## 14. REMOVAL OF OLD USER-SPECIFIC CONTENT
+
+Remove or gate from visible UI and from any hard-coded/mock data in the source:
+- Existing user profile, username, email, avatar, "Lv." rank and progress text (the references contain sample values; **do not reuse them**).
+- Logged-in info and authenticated header state when no session exists.
+- Old watchlists, favourites/bookmarks, saved anime/manga.
+- Watch history, "Resume Watching", "Continue Watching", reading history, "recently viewed".
+- Personal recommendations derived from old users.
+- Prior comments/activity attributed to demo users, fake notifications, fake counters.
+- Temporary/generated passwords and any credentials displayed in the UI.
+- Hard-coded demo users in seed files, fixtures, stories, tests or default state (keep only what tests genuinely need, clearly separated).
+
+**Safety rules:** do **not** run destructive database commands, drop/truncate tables, or delete real user records or production data without **explicit written authorization from the owner**. Prefer UI-level gating, session reset and a separate clean dev/demo database. Do not remove real authentication, user tables or APIs.
+
+---
+
+## 15. BACKEND AND API PRESERVATION
+
+- Update the existing project; do not migrate frameworks or rewrite architecture.
+- Preserve routes (`/anime/{id}`, `/watch/{id}/{episode}`, etc.), API clients and provider integrations (AniList/GraphQL and any manga/stream providers), database connections, auth/session logic, settings persistence, Discord connect flow, comments, notifications, schedule countdowns, Safe/Mature filtering, Sub/Dub/Hindi and automatic source fallback, intro/outro skip, AutoPlay/AutoNext/Theater (desktop), bookmark/favourite persistence, keyboard shortcuts (`/`).
+- Change backend code only where V80 requires it and the data cannot otherwise be supplied (e.g. manga chapters/views); report each such change.
+- No fake data, no non-functional placeholder components: if a feature has no data source, hide the element gracefully instead of showing dummy content.
+- Keep accessibility: semantic landmarks, `aria-label` on icon-only buttons, `role="switch"` on toggles, visible 2px focus ring (offset 2px), contrast ≥ 4.5:1, hover-only affordances have touch/keyboard equivalents, reduced-motion support.
+
+---
+
+## 16. RESPONSIVE BEHAVIOUR
+
+| Breakpoint | Behaviour |
+|---|---|
+| ≥1280 | As Section 4. Rails ~7–8 cards, Browse 6 cols, Top 10 three columns, Watch ≈61/39. |
+| 1024–1279 | Rails ~5–6; Browse 5 cols; Watch sidebar ~320px. |
+| 768–1023 | Search collapses to an icon; Browse 3–4 cols; Top 10 stacks or tabs; profile sidebar becomes a horizontal tab row; Watch stacks (player → info → episodes → recommendations). |
+| <768 (phones) | Section 5 exactly: floating pill tab bar, 4-control header, hero fan bleeding off edges, snap rails (~28% cards), centred detail pages, single-column characters, 2-column recommendation grids, inline episode list with AUDIO row, centred auth modal, reader swipe mode. |
+
+Desktop nav pill group and search pill are replaced on phones by the header icons + bottom tab bar; **never** render both.
+Hide desktop-only controls on mobile (Theater, hover preview, rail chevrons). Add `env(safe-area-inset-*)` handling. Test in portrait and landscape.
+
+---
+
+## 17. IMPLEMENTATION INSTRUCTIONS
+
+1. **Audit** the project (framework, router, styling, components, stores, API clients, manga provider, player, auth). List files to change/add before editing.
+2. **Back up / branch** (`git` branch) before changes. Do not touch production data.
+3. Build **tokens and shared primitives** (Section 11) once; reuse everywhere.
+4. Implement in this order: Navbar (desktop + mobile header + tab bar) → Footer → Home (desktop + mobile) → Auth modal → Browse → Anime Detail → Watch → Schedule → Favorites → Profile screens → Manga page → Browse manga → Manga detail → Chapters → Reader.
+5. Apply the **clean-state rules** (Sections 13–14) as you go; strip demo/personal content.
+6. **Performance while you build:** hero first image eager with `fetchpriority="high"` and preloaded; lazy-load all below-the-fold images; set image dimensions/aspect-ratio; request sizes appropriate to each slot; use `object-fit: cover` and `object-position: center top` for posters; never up-scale low-resolution images; code-split player/reader/heavy modules; dedupe identical API requests (one shared fetch for rails); debounce search 250–350ms with cancellation; virtualise long episode/chapter lists; limit large blurred layers over video; skeleton loaders in final shapes. Measure Lighthouse/LCP/CLS and request counts before and after on Home and report real numbers.
+7. Never reproduce sample strings from the screenshots as hard-coded content (titles, usernames, emails, passwords, dates, counts).
+8. Where this prompt says **[U]**, choose the conservative option and list it in the final report.
+9. **Final report:** files changed/added, what was reset, how clean state is achieved, every [U] decision, the brand-name and data-source conflicts, and performance before/after.
+
+---
+
+## 18. TESTING AND FINAL VERIFICATION
+
+Test in a real browser and on real/emulated phones (360, 390, 412px wide, portrait and landscape) plus desktop at 1920, 1440, 1280, 1024, 768.
+
+**Desktop**
+- [ ] Navbar: floating groups, order Home·Manga·Browse·Schedule·Favorites with icons, active inner pill, search pill with "/" badge, eye/bell/avatar-or-Sign-Up, scrolled bar state
+- [ ] Hero: SPOTLIGHT / 0N + "10 TOTAL", fan with white-bordered focus poster, chip + "SCORE — N% | N EP | YEAR", title logo (bold-sans fallback, no serif), genres line, two glass buttons, faint numeral
+- [ ] Home order, genres strip, six rails, hover preview, chevrons, Top 10 (10 rows × 3)
+- [ ] Browse, Detail, Watch (menu, toast, countdown), Schedule (tabs, date chip, alternating timeline), Favorites (empty + populated), Profile screens match Section 4
+- [ ] Footer matches; no blank space below it; no horizontal overflow
+
+**Mobile**
+- [ ] Header: logo + search/eye/bell circles + white user-plus pill; transparent on hero, translucent after scroll, readable
+- [ ] Floating pill tab bar with 5 filled icons + labels, active white, content scrolls beneath, bottom padding reserved
+- [ ] Hero fan bleeds off both edges, "● TV" chip + meta, title logo ~80–90% width, two side-by-side glass buttons
+- [ ] Genres rounded container with lilac label and scrolling chips
+- [ ] Section headers wrap correctly (count + View All beside or under the title, left-aligned when wrapped)
+- [ ] Rails: ~28%-width cards, ~24px gap, third card clipped, rank pill + heart, ellipsis titles, 3-part meta row; swipe snap works
+- [ ] Guest Home has no Resume Watching / Quick Watchlist
+- [ ] Detail: centred overlapping poster, stacked pills, centred title/alt title/chips/genres/synopsis, single-column characters with 90px avatars, 2-column recommendations
+- [ ] Watch: player card, strip (no Theater), AUDIO row with icon segments, inline episode list with filter/eye/image controls; no blank gap
+- [ ] Auth: Create Account (Discord button, "OR CONTINUE WITH EMAIL", Live Avatar + Roll, 4 labelled fields, white button, switch link) and Sign In (Welcome Back, 2 fields, white button, switch link) over the indigo gradient with faint lines
+
+**Manga**
+- [ ] Manga page sections (hero, Top Viewed carousel, Recently Added 3-col grid with flag/new-chapter dot/"Read Latest Chapter", Popular & Trending, Top Rated) on desktop and mobile
+- [ ] Browse Manga mode: filters (source toggle and format pills where supported), Safe/Mature, flag + chapter-status cards
+- [ ] Manga detail: breadcrumb, badge, rating/chapters/views/status, Show More, genres, three buttons, credit line
+- [ ] Chapter list: search, sort, view toggle, rows, mirrored pagination
+- [ ] Reader: "‹ Ch. N / total ›", vertical scroll, page counter + %, zoom controls, right icon rail; mobile swipe + tap zones; prev/next chapter
+
+**Clean state & safety**
+- [ ] Fresh session shows no profile, history, watchlist, favourites, notifications, demo data or sample credentials anywhere
+- [ ] No production data deleted; auth, database and API integrations still work
+- [ ] Existing features regressed? (video playback, source fallback, favourites, comments, settings persistence, schedule countdowns) — none
+- [ ] No neon/glow/cyberpunk styling outside content art; no serif fonts
+- [ ] Images sharp, no layout shift, fallbacks work; no new console errors; keyboard/focus checks pass; performance before/after recorded
+
+---
+
+## APPENDIX — ITEMS NOT VISIBLE OR UNCLEAR (decide conservatively, report)
+
+1. **No manga screenshots** (desktop or mobile): all manga visuals are inferred from V80 text + the reference design language.
+2. Brand name (Mirai vs Aniclover) and wordmark; data provider (Jikan vs AniList).
+3. Exact fonts; rank-numeral colours (01–03); day-tab count numbers; desktop guest navbar label; desktop auth layout; hover-preview flip logic; mobile Schedule/Favorites/Profile/Browse layouts (only Home, Detail, Watch, Auth are shown on mobile).
+4. Mobile hero: whether "SPOTLIGHT / 0N" and the numeral exist; hero background blur amount.
+5. Discord button label and "Forgot password?"/social icons in auth; whether the Sign In/Create Account tab control exists.
+6. V80 items without screenshot evidence: Community section (§14), "Focus" toggle, serif hero titles, "Atsu"/"MangaBall" sources, manga sidebar panel contents, reader settings contents.
+7. V80 §14.4 references a Discussion component "specified in §9/§11" that §11 does not define: use the Discussion card from D9/D10 for anime and only the reader's chapter-discussion drawer for manga.
+8. All pixel values are estimates from scaled screenshots; match proportions visually.

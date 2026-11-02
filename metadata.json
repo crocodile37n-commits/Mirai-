@@ -1,0 +1,6 @@
+{
+  "name": "Mirai — Anime & Manga Streaming",
+  "description": "Your premium destination for streaming anime and reading manga. Discover trending series, track your watchlist, and explore stories in pristine HD.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,332 @@
+# MANGA SECTION REDESIGN — IMPLEMENTATION PROMPT FOR AI BUILDER (MIRAI)
+
+You are the AI Builder. The website **Mirai** is already built. Your job is to **redesign the existing Manga section** (Manga page/directory, Browse in Manga mode, manga cards, manga detail page, chapter list, reader) so that it matches the **original Version 80 ("V80") Manga specification** and feels like a natural, inseparable part of the rest of the site, not a separate product.
+
+Do **not** rebuild the website, change its architecture, or break working features. Update in place.
+
+---
+
+## 0. READ THIS FIRST: WHAT THIS PROMPT IS AND IS NOT BASED ON
+
+**Materials actually available when this prompt was written**
+1. The full V80 prompt (source of truth for manga *requirements and structure*).
+2. Screenshots of the **anime-side** of the site (desktop and phone): navbar, Home, Browse, Anime Detail, Watch, Schedule, Favorites, Profile, auth modals, mobile Home/Detail/Watch. These establish the platform's **visual language** (the manga section must match it).
+
+**Materials NOT received**
+- **No manga reference screenshots** (neither directory, detail, chapter list, reader, nor mobile manga) were included with this request.
+- **No screenshot or code of the current Manga page** was included.
+
+Therefore:
+- The visual details of manga-specific screens below are derived from **V80 text + the confirmed anime-side visual language**. They are tagged **[U]** where no image confirms them. If the owner later supplies manga screenshots, those override anything tagged [U].
+- The comparison between "what exists now" and "what was intended" **cannot be written from here**. Section 3 instead gives you a **mandatory audit procedure and gap table** to complete against the real codebase before you change anything.
+- Do **not** invent features beyond V80. Do not invent visuals beyond what Sections 5–7 state.
+
+**Confidence tags**
+- **[V80]** Stated in the V80 prompt.
+- **[C]** Confirmed visually in an (anime-side) screenshot; reuse it for manga.
+- **[E]** Estimate (measured from scaled screenshots); tune visually.
+- **[U]** Not determinable from the materials; choose the most conservative option, keep it minimal, list it in your final report.
+
+**Naming/data conflicts to respect**
+- Screenshots show the brand **"Aniclover"** (blossom logo, "Ani" white / "clover" pink); V80 calls it **Mirai** with a violet "Mi/rai" wordmark. **Keep the existing logo and brand strings; do not rename.**
+- Footer says "AniList API / GraphQL Endpoint" while V80 §21 says Jikan v4. **Do not change data providers**; use what the manga section already uses.
+
+---
+
+## 1. EXTRACTED V80 MANGA REQUIREMENTS (complete, from the original prompt)
+
+Everything below is stated in V80. Preserve all of it wherever still relevant.
+
+### 1.1 Manga Page (V80 §4) — "Mirrors the Home layout exactly for visual consistency"
+1. **Hero spotlight carousel**: same component as Home; manga cover art; covers are **taller/portrait** and sometimes have **vertical Japanese/Korean logotype baked into the art**. Meta pill shows **MANWHA / MANGA / MANHUA**, **rating**, **view count** (instead of score/episodes).
+2. **Top Viewed Titles**: horizontal carousel with **visible circular prev/next chevron buttons at the row edges**; under each title a **star rating** and an **eye icon + view count**.
+3. **Recently Added & Updated**: a **3-column card grid** (not a scroll row); **larger cards** with a small **country-flag chip (JP/KR/CN) top-left**, a **green "new chapter" pulse dot top-right**, title, a **"Read Latest Chapter" link (book icon)** and an **"Available" / clock status**.
+4. **Popular & Trending**: grid, **same card style as Browse** (poster, title, format, rating, views).
+5. **Top Rated All-Time**: horizontal carousel with chevron nav.
+6. **"Sidebar panel + Footer (shared components)"**. (V80 never defines the sidebar panel's contents [U].)
+
+### 1.2 Browse page, Manga mode (V80 §5)
+- **Mode toggle** (top): pill switch **Anime / Manga** (icon + label), active = solid white pill.
+- **Search + Filters row**: full-width search input (icon left) + **"Filters"** button (funnel icon) opening a modal/drawer with facets: **Genre** (multi-select pills), **Year range**, **Status** (Airing/Completed/Upcoming), **Format**, **Sort** (Popularity/Score/Newest/A-Z); and for manga specifically a **Source toggle** (V80 example: **"Atsu" / "MangaBall"** content providers) and **Format pills: All / Manga / Manhwa / Manhua / OEL**.
+- **Safe/Mature content bar**: rounded panel; "Safe anime / Adult titles are hidden" label left, segmented control right (**Safe [shield icon, active white] | 18+ Mature [lock icon]**).
+- **Results grid**: "Discover …" H2 + "N … shown" counter; responsive **6 cols desktop → 4 tablet → 2 mobile**; poster cards with hover-revealed heart top-right; **infinite scroll or "Load More"**.
+- **Manga-mode grids use the same card component** with **country flag + chapter-status metadata** instead of episode metadata.
+
+### 1.3 Manga Detail Page (V80 §11)
+- **Breadcrumb** ("← Manga library"), **format badge** ("MANGA"), **H1 title**, **meta row** (★ rating, chapter count, view count, status pill), **synopsis + "Show More"**, **genre pills**, **three action buttons**: **"Read First (Ch. 1)"** (solid), **"Read Latest (Ch. N)"** (outline), **"Chapters"** (ghost / icon-only), **author/artist credit line**.
+- **Chapters list panel**: H2 **"Chapters" + count**, **search-chapter input**, **sort-icon button**, **list/grid view toggle**. Each row: **chapter number, chapter title, scanlator-group tag + page count, right-aligned publish date + chevron**. **Pagination** (Prev · numbered pages with ellipsis · Next, **"Page X of Y"** caption) **mirrored top and bottom** of long lists.
+
+### 1.4 Reader (V80 §11)
+- **Minimal chrome**; top-left **"‹ Ch. 1 / 360 ›"** navigator; **full-bleed vertical-scrolling page image(s)**; bottom-left **page counter + % progress**; bottom-right **zoom controls (− / fit-width / +)**.
+- **Right fixed vertical icon rail** (each a circular icon button): **home, library/book, chapter-list, chat/comments (jumps to a chapter-discussion drawer), fullscreen, settings gear, next-chapter arrow**.
+
+### 1.5 Other V80 manga-relevant requirements
+- **Favorites/Watchlist (§12)**: filter tabs **All / Anime / Manga**, sort dropdown (Recently Added / A–Z / Rating); Browse-style card grid with filled-heart remove toggle.
+- **Comments on Chapter pages (§14.4)**: reuse the Discussion component (comment count header, sign-in gate for guests, nested replies, Helpful/Reply). V80 §11 says the reader's chat icon opens a "chapter-discussion drawer". (V80 never defines the Discussion component itself in §9/§11 [U]; reuse the one already on the Anime/Watch pages.)
+- **Search (§7)**: grouped dropdown "Anime / Manga / Characters", max 5 per group.
+- **Footer (§2)**: "Manga & Media → Manga Reader".
+- **Components (§15)**: Poster card (2:3 anime, **varies for manga**; rank badge / **country-flag chip / new-chapter dot** top-left; heart top-right; title 1–2 line clamp; meta row), Pill buttons, Segmented toggle, Badge/Chip, Stat row, Empty state, Avatar.
+- **Responsive (§16)**: mobile reader = **horizontal-swipe single-page mode by default with tap zones (left/right thirds)**; poster + info stack vertically on detail pages (**poster centred, full-width action buttons**, info panel → expandable "Info" accordion); card rows → swipe carousels with snap and 10–15% peek; touch targets ≥ 44px.
+- **Animations (§17)**: section entrance fade + 12px slide-up (stagger 60–80ms, once); card hover scale 1.04 + brighter border + heart fade-in; sliding segmented toggles; skeleton shimmer; toasts; respect reduced motion.
+- **States (§18)**: skeleton cards, empty search ("No results for '{query}'"), API error with Retry, image failure placeholder with retry, offline banner.
+- **Accessibility (§19)** and **Performance (§20)**: **virtualise chapter lists with 300+ rows**, lazy-load images, debounce search 250–300ms, code-split the **manga reader**, preload only the first hero image.
+- **Data (§21)**: documented Jikan manga endpoints are `/manga` and `/manga/{id}` (+ `/manga/{id}/characters`). **Chapters, page images, views, sources, scanlator groups, country, new-chapter flags** have no Jikan equivalent and must come from the project's own backend/provider layer or a clearly separated mock layer. Never invent API endpoints.
+
+---
+
+## 2. THE PLATFORM'S VISUAL LANGUAGE THE MANGA SECTION MUST MATCH [C]
+
+These come from the confirmed anime-side screenshots. The Manga section must use **exactly the same** components, tokens and proportions.
+
+**Look:** near-black pages, hairline borders, translucent glass pills, poster art carrying the colour, one restrained lilac/violet accent. No neon, glow, scanlines or cyberpunk decoration. No serif fonts (V80 mentions a serif for hero titles; no screenshot shows one [U]).
+
+**Tokens [E, baseline from V80 and consistent with screenshots]:** `--bg-base #060607`, `--bg-elevated #0D0D10`, `--bg-elevated-2 #141417`, `--border-subtle rgba(255,255,255,.08)`, `--border-strong rgba(255,255,255,.16)`, text `#F5F5F7 / #A1A1AA / #6B6B71`, accent `#8B5CF6`, gold `#FBBF24`, live-green `#22C55E`. Muted text may lean slightly lilac (~`#A09CAE`).
+
+**Type [E/U]:** headings/nav/titles/buttons = geometric bold sans resembling **Montserrat** (600–800); body/meta = **Inter**. Keep the project's existing fonts if they already match. Eyebrow 10–11px/700 uppercase tracking ~.18em; H2 36–40px/800 desktop, ~28px mobile; card title 13px/700; meta 11px uppercase; body 14–15px, line-height 1.7.
+
+**Shapes:** pills 999px; poster cards 12–18px; panels 16–24px; inputs 10–12px. **Glass recipe:** `rgba(255,255,255,.06)` + `backdrop-filter: blur(16px) saturate(140%)` + 1px `rgba(255,255,255,.10)` border + `0 8px 32px rgba(0,0,0,.45)`.
+
+**Shared patterns to reuse verbatim**
+- **Navbar (desktop):** floating groups (logo; dark nav pill with Home · Manga · Browse · Schedule · Favorites, each with a leading icon, active = inner lighter pill with white bold text; search pill "Search anime & manga..." with "/" badge; circular eye, bell, avatar-or-Sign-Up). The **Manga** nav item shows as active on every manga route. Scrolled state: translucent bar with blur and bottom hairline.
+- **Navbar (phone):** logo + search/eye/bell circles + white user-plus pill; **floating pill tab bar** at the bottom (Home, Manga, Browse, Schedule, Favorites; filled icons with labels; active = white). Manga item is active on manga routes.
+- **Section header:** eyebrow above big bold title; right side (desktop) muted "N titles" + dark **"View All" pill**; on mobile the title row wraps with the count and View All beside/under it, left-aligned when wrapped. ~64px between sections.
+- **Accent-bar heading:** 3px × ~20px white vertical bar + bold text (used for "Discover …", "CHARACTERS", "YOU MIGHT ALSO LIKE", "SELECT EPISODE", "ANIME INFO").
+- **Poster card:** ≈5:7 in rails (≈152×214 at 1336px width), ≈2:3 in grids; radius ~16–18; glass "#N" rank pill top-left, glass circular heart ~30px top-right; hover = centred glass "▶ Play" pill + lift; below: bold 13px title (ellipsis) + three-part meta row (format left, ★ gold score centre, count right). Desktop hover-preview card (~285×320) exists on anime rails.
+- **Chips/pills:** 28–34px tall, hairline outline, 11–13px text; selected = solid white with black text.
+- **Detail layout (anime) to mirror for manga:** full-bleed banner with gradient to black; poster ~195×290 overlapping the banner with hairline border; title 38–40px/800; muted alt title; chip row (★ rating outlined/brighter, year, format, count, status); genre chips; synopsis ~14.5px; "Play"/"Add to List" dark pills; key/value info panel with hairline rows; accent-bar sub-sections.
+- **Episode-list rows (anime Watch sidebar) to mirror for chapter rows:** solid dark rounded rows, hairline separators, bold title, muted description, small chip, date at right, active row outlined.
+- **Inputs:** ~40px tall, radius ~10–12, dark fill, hairline, leading icon.
+- **Segmented toggle:** dark container, active segment solid white/black text (Anime|Manga, Safe|Mature).
+- **Empty state:** ~90px dark circular badge with muted lilac icon + bold title (~20px) + muted line + dark pill CTA.
+- **Mobile:** floating tab bar, 28%-width rail cards with ~24px gap and clipped third card, centred detail pages (centred overlapping poster ~35% width, stacked ~175px pill buttons, centred title/chips/genres/synopsis), 2-column recommendation grids, ~16–20px gutters.
+
+---
+
+## 3. MANDATORY AUDIT — CURRENT MANGA PAGE VS V80 (do this before editing)
+
+Because the current Manga page was not provided, inspect the codebase and the running site yourself and fill in this table in your working notes (and include it in your final report).
+
+| V80 element | Intended (V80) | Currently exists? (Yes / Partial / No) | Visual match with platform (Section 2)? | Action |
+|---|---|---|---|---|
+| Manga nav item active state, routes | active pill on all manga routes | | | |
+| Hero spotlight carousel (manga covers, type/rating/views meta, vertical logotype tolerance) | same component as Home | | | |
+| Top Viewed Titles carousel (chevrons, ★ + eye + views) | | | | |
+| Recently Added & Updated 3-col grid (flag chip, green dot, "Read Latest Chapter", status) | | | | |
+| Popular & Trending grid (Browse card) | | | | |
+| Top Rated All-Time carousel | | | | |
+| Sidebar panel | undefined in V80 [U] | | | |
+| Browse Manga mode: toggle, search, Filters drawer (Genre/Year/Status/Format/Sort), Source toggle, Format pills, Safe/Mature bar, 6/4/2-col grid, infinite scroll / Load More | | | | |
+| Manga card (flag, new-chapter dot, heart, 2-line clamp, meta row) | | | | |
+| Detail page (breadcrumb, badge, H1, meta row, synopsis + Show More, genres, 3 buttons, credit line) | | | | |
+| Chapter list (search, sort, view toggle, row anatomy, mirrored pagination, virtualisation ≥300) | | | | |
+| Reader (top navigator, vertical pages, page counter + %, zoom controls, right icon rail, chapter-discussion drawer) | | | | |
+| Mobile reader (horizontal swipe, tap zones) | | | | |
+| Manga tab in Favorites (All/Anime/Manga) | | | | |
+| Chapter comments (Discussion component) | | | | |
+| Loading/empty/error states for manga | | | | |
+| Fonts, colours, radii, glass, spacing vs Section 2 | | | | |
+
+Typical inconsistencies to look for (verify, do not assume): different fonts or colour surfaces; different card proportions or radii; a separate header/footer or nav styling; different button/chip styles; missing glass/hairline treatments; a different empty-state or skeleton style; mobile layout not using the floating tab bar; reader chrome unrelated to the site's controls.
+
+---
+
+## 4. EXISTING-SITE RULES
+
+1. **Update, don't rebuild.** Reuse existing routes, data hooks, providers, state and persistence. Restyle and restructure the manga components; create new components only for V80 elements that are missing.
+2. **Reuse shared primitives** from the anime side (section header, poster card, chips, segmented toggle, inputs, empty state, skeletons). If manga has its own duplicate versions, **replace them with the shared ones** so one design system remains.
+3. **Do not change data providers.** The manga source(s) currently integrated stay. V80's "Atsu / MangaBall" are examples; show a Source toggle **only for providers already integrated** [U]. Don't add new scraping sources.
+4. **No fake data / placeholder components.** If a field (views, country, scanlator, new-chapter flag, author/artist) isn't supplied by the data layer, **hide that element gracefully** instead of showing dummy values, and report it.
+5. **Clean state:** guests see no personal manga data (no reading history, bookmarks or "continue reading" section; V80 defines none, so don't add one). Don't touch production data.
+6. Keep all working features: auth, favourites, bookmarks, Safe/Mature filtering, search, notifications, existing reading-progress persistence.
+
+---
+
+## 5. DESKTOP DESIGN SPECIFICATION
+
+### 5.1 Manga page (directory) [V80 structure + Section 2 visuals; manga-specific visuals [U]]
+Order: Hero → (Genres strip, if the Home pattern includes one under the hero [U: optional; reuse the Home component with manga genres]) → Top Viewed Titles → Recently Added & Updated → Popular & Trending → Top Rated All-Time → sidebar panel [U] → Footer.
+
+- **Hero:** same dimensions/behaviour as Home's hero (~600–650px, banner art darkened with bottom gradient to the page background, top-left "SPOTLIGHT / 0N", top-right "N TOTAL", card fan with white-bordered focused cover and rotated dimmed covers, meta line, title, genres line, two glass buttons, faint decorative index numeral). Manga differences [V80]: covers are **portrait (taller)**, fan cards use the portrait ratio; meta line shows **a bordered rectangular type chip ("● MANGA/MANWHA/MANHUA")** and **rating + view count** (e.g. "★ 8.9 | 1.2M VIEWS" [U exact wording/format]); buttons: **"▶ READ NOW"** [U label; V80 only says CTAs mirror Home: use "READ NOW" if the project's Home uses "WATCH NOW"] and "BROWSE CATALOGUE". Title: title-logo image if available else bold sans (no serif).
+- **Top Viewed Titles:** accent section header (eyebrow e.g. "MOST VIEWED" [U wording]) + H2 + "N titles" + "View All". Rail of poster cards with ~22px gap, ~7 visible + clipped 8th, **visible circular glass chevrons (~38px) at both row edges** (V80: "visible circular buttons at row edges"); card meta under the title: **★ gold rating + eye icon + view count**. Rank pill "#N" top-left in rails.
+- **Recently Added & Updated:** **3-column grid**, larger cards (width = column width; cover ratio ~2:3 or the data's ratio with object-fit cover, radius ~16). Overlays: **flag chip (JP/KR/CN)** top-left (small glass pill with flag emoji or flag icon + code [U]), **green pulsing dot** top-right (`--status-live`, 8–10px, soft pulse animation; replaced by heart only on hover? [U: V80 puts the dot top-right; keep the heart accessible by placing it just left of the dot or on hover, decide and report]). Below: title (bold), a **"Read Latest Chapter" link with a book icon** (white, 13px/600) and a status text: **"Available"** or a **clock icon + time/relative date** [U exact copy].
+- **Popular & Trending:** grid with the Browse card (6 columns at ≥1280, then 5/4/3/2), heart on hover top-right, title, meta (format, ★ rating, views).
+- **Top Rated All-Time:** same rail as Top Viewed with chevrons; meta ★ rating prominent.
+- **Section spacing** ~64px; container and gutters identical to Home (~30px left edge on screenshots; max 1440px).
+- **Sidebar-style panel [U]:** if Home's panels (Quick Watchlist / Genres) exist, reuse them as "Quick Library"/"Genres" for manga using the same empty-state style; otherwise omit and report.
+
+### 5.2 Browse, Manga mode
+Identical layout to anime Browse [C]: Anime|Manga segmented toggle (active solid white with icon) → full-width search input + "▼ Filters" pill → Safe/Mature panel (left "Safe manga" + caption "Adult titles are hidden"; right segmented Safe/18+ Mature) → accent-bar "Discover Manga" + "N manga shown" → **6-column grid**, ~16px gap, heart top-right, cards with **flag chip + chapter-status metadata** (e.g. "Ch. 360", "Updated 2d ago" [U exact copy]; "ONGOING"/"COMPLETED" where the anime card shows "ONGOING"/episode count).
+**Filters drawer/modal:** Genre multi-select pills; Year range; Status; Format; Sort; **Source toggle** (only integrated providers); **Format pills** All / Manga / Manhwa / Manhua / OEL. Drawer styling: `--bg-elevated`, blur backdrop (20px) over a dimmed scrim, 1px hairline, radius 16, fade+scale-from-98% (V80 §1.4/§17); footer buttons "Reset" (ghost) and "Apply" (white pill) [U copy].
+Pagination: keep existing mechanism (infinite scroll or "Load More" pill).
+
+### 5.3 Manga card
+- Cover container: `aspect-ratio` fixed (default 2:3 [V80: "varies for manga"]; allow portrait/taller covers by using `object-fit: cover; object-position: center top`); radius 12–18; 1px hairline; skeleton/placeholder while loading; fallback tile on error.
+- Top-left: rank pill (rails) **or** country-flag chip (grids/Recently Added) **or** both stacked [U].
+- Top-right: glass circular heart (~30px); hover-reveal on desktop.
+- Hover: lift (scale ~1.04 or translateY −4px), brighter border, soft shadow (0 12px 24px rgba(0,0,0,.5)), centred glass **"Read"** pill [U: anime uses "▶ Play"].
+- Below image: title (bold 13px, 1–2 line clamp), meta row (format/type left, ★ gold rating centre, views or latest chapter right).
+- Hover-preview card on rails (anime has one): optional for manga [U]; if built, same anatomy (banner strip, small cover, title, "★ 8.4 • MANGA • 2020", ≤3 genre chips, 4-line synopsis, "Click to view details").
+
+### 5.4 Manga detail page
+Follow the **anime detail layout [C]** with V80 manga content:
+- Optional blurred banner (key art) with gradient to black, ~310px; **if no banner is provided by the data, use a blurred, darkened version of the cover** [U].
+- **Breadcrumb** "‹ Manga library" (small, muted, above the title; links to the Manga page).
+- Left column (~195px wide): cover (~195×290, radius ~16, hairline, overlapping banner). Under it, V80's three actions as stacked pills: **"Read First (Ch. 1)"** (solid white, black text), **"Read Latest (Ch. N)"** (outlined), **"Chapters"** (ghost/icon-only; scrolls to the list). Add-to-list/favourite heart reuses the existing favourites logic and style.
+- Right column: **format badge** (e.g. "MANGA"/"MANWHA"; small bordered chip, uppercase), **H1 title** (38–40px/800, wraps 2 lines), **alt/native title** in muted tone, **meta row chips**: ★ rating (outlined, brighter), chapter count ("360 chapters"), view count (eye icon), **status pill** (e.g. RELEASING in `--status-live` green on desktop), then **genre chips**, **synopsis** (14.5px, line-height 1.75, clamped with **"▼ Show More"**), **author/artist credit line** (muted, e.g. "Story: X · Art: Y").
+- **Info panel** (accent-bar "MANGA INFO"; key/value rows with hairlines) **only if** the data provides fields (Type, Author, Artist, Status, Year, Serialization…) [V80 doesn't specify; U].
+- **Characters / "You Might Also Like"**: only if the data source provides them (V80 §21 lists `/manga/{id}/characters`); same layouts as anime (3-col characters with 50px circular avatars; 5-col recommendations).
+- **Chapters panel** below (Section 5.5). **Discussion** card (Section 5.7) at the bottom.
+
+### 5.5 Chapter list / organisation [V80 §11]
+- Accent-bar H2 **"Chapters"** with total count ("360 chapters") and, on the right, the controls: **search-chapter input** ("Find chapter…" [U copy]; pill ~36px, magnifier), **sort icon button** (toggles ascending/descending; circular or pill 36px), **list/grid view toggle** (segmented icon pair).
+- **List view rows** (~60px, `--bg-elevated`, radius ~12, hairline separators or card-style gaps ~8px): left **chapter number** (bold, e.g. "Ch. 12"), **chapter title** (bold 14px, 1 line ellipsis), small tags: **scanlator-group chip** (small outlined chip) + **page count** ("24 pages", muted); right: **publish date** (muted 12px) + **chevron**. Hover: brighter surface; read chapters dimmed [U]; last-read row outlined (same outlined highlight as the active episode row on Watch) [U]. A new/unread chapter may use the green dot [U].
+- **Grid view:** compact tiles (chapter number prominent, date below) [U layout; keep simple].
+- **Pagination:** Prev · numbered pages with ellipsis · Next, caption **"Page X of Y"**; **rendered both above and below long lists** [V80]; pill buttons, active page solid white. **Virtualise or paginate when ≥300 chapters** [V80 §20].
+- Sorting default: newest first or oldest first [U]; follow existing behaviour.
+- Selecting a chapter opens the reader at that chapter. "Read First"/"Read Latest" use first/last chapter respectively.
+
+### 5.6 Reader interface [V80 §11]
+- **Canvas:** `--bg-base` (#060607), pages in a centred column (width by zoom/fit; default fit-width up to ~900–1000px [U]), **full-bleed vertical scroll**, no or minimal gaps between pages.
+- **Top-left navigator:** **"‹ Ch. 1 / 360 ›"** — prev arrow, current/total, next arrow; glass pill (~36px). Optionally the series title next to it [U].
+- **Bottom-left:** page counter ("12 / 24") + **% progress** (small glass pill).
+- **Bottom-right:** zoom controls **−  /  fit-width  /  +** (glass segmented pill).
+- **Right fixed vertical icon rail** (circular glass buttons ~40px, 8–12px gap), in this order: **home, library/book, chapter list, chat/comments, fullscreen, settings gear, next-chapter arrow**. Icons are 1.5–2px-stroke line icons (Lucide style), tooltips/aria-labels on each.
+  - home → site home; library/book → manga detail/library; chapter list → opens a chapters drawer/panel (reuse the chapter-list component) [U drawer styling: `--bg-elevated`, hairline, slides from the right]; chat/comments → **chapter-discussion drawer** with the shared Discussion component [V80]; fullscreen → browser fullscreen; settings gear → existing reader settings only [U contents]; next-chapter → goes to the next chapter (disabled state at the last chapter).
+- **Chrome behaviour [U]:** keep it minimal; controls stay visible on desktop or fade after inactivity, reappearing on mouse move/scroll-up; do not add features V80 doesn't list.
+- **Keyboard [U]:** only if the existing reader already supports it (e.g. arrow keys); otherwise skip.
+
+### 5.7 Page/image display rules
+- Each page image: fixed width from zoom setting, `height: auto` using known `width/height` or aspect-ratio to prevent layout shift; `display:block`; no stretching; `image-rendering: auto`.
+- **Lazy-load** beyond the first 2–3 pages; **preload the next 2** (and the first page of the next chapter near the end).
+- **Skeleton** (page-shaped dark block with shimmer) while decoding; **failed image** → dark tile with broken-image icon + **"Image failed to load — tap to retry"** [V80 wording].
+- Never upscale pages beyond their natural resolution unless the user zooms; prefer full-quality sources over thumbnails.
+- Chapter end: a clear end-of-chapter block with **"Previous chapter" / "Next chapter"** buttons (pills) and a link back to the chapter list [U layout, uses V80's prev/next controls].
+- Reading progress (chapter + page) saved with the existing persistence; add minimal local persistence only if none exists, and report it.
+
+### 5.8 Discussion on manga/chapter pages [V80 §14.4]
+Reuse the existing Discussion card from the Watch page: header "Discussion" + "(N Comments)", avatar + textarea ("Post a comment on Chapter N…"), white "Submit Comment" pill; guests see a sign-in gate; nested replies with Helpful/Reply. On the manga detail page it sits at the bottom; in the reader it opens in the chapter-discussion drawer.
+
+---
+
+## 6. MOBILE / PHONE DESIGN SPECIFICATION
+
+Mobile manga screenshots were **not** provided: everything below applies the **confirmed mobile anime patterns** and the **V80 §16** rules. Mark visual choices not seen in screenshots as [U] in the report. Values are fractions of viewport width with px for a ~390px viewport [E].
+
+### 6.1 Global mobile chrome [C]
+- Header: logo left; right: circular glass search, eye, bell (~42–46px) + white user-plus pill (guest) or avatar. Transparent over the hero; translucent blurred bar with bottom hairline after scroll (use enough opacity/blur that content beneath isn't legible through it).
+- **Floating pill tab bar** at the bottom (Home, Manga, Browse, Schedule, Favorites; filled icons + ~11–12px labels; active = white icon + bold white label; ~14–16px side margins, ~56–64px tall, ~32px radius, dark glass, hairline); **Manga is active on all manga routes**. Reserve bottom padding on all pages. In the reader the tab bar hides (and returns on centre tap) [U].
+- Gutters ~16–20px; section gap ~64–72px; touch targets ≥ 44px.
+
+### 6.2 Mobile Manga page
+- **Hero:** blurred, tinted art background; portrait cover fan (focused cover ~24% of width with white ~2–3px border; ~3 rotated, dimmed covers per side bleeding off both screen edges); chip "● MANGA" + "RATING | VIEWS" meta line (11px tracked); title logo/bold sans spanning ~80–90% width; genres line; two side-by-side glass pills ("▶ READ NOW" [U label], "BROWSE CATALOGUE").
+- **Genres strip** (if used): rounded container with lilac compass icon + "GENRES" and scrolling outlined chips.
+- **Section headers:** eyebrow, H2 ~28px/800, wrapping row with "N titles" and "View All" pill.
+- **Top Viewed / Top Rated rails:** swipe + scroll-snap, hidden scrollbar, **cards ≈28% of width (~110px), gap ≈24px, ~2.7 visible**, ratio ≈5:7, radius ~12–14, glass rank pill + heart, title ellipsis (1 line), meta row (type · ★ rating · views). **Chevron buttons hidden** on mobile (swipe only) [V80: "convert to swipeable carousel"].
+- **Recently Added & Updated:** 3-column grid becomes **1 or 2 columns** [U]: prefer **2 columns** of larger cards, keeping flag chip, green dot, "Read Latest Chapter" link and status; one column only below ~340px.
+- **Popular & Trending:** **2-column grid** (gap ~16px).
+
+### 6.3 Mobile Browse (Manga mode)
+Anime|Manga toggle (full width, white active segment), search input, "Filters" button opening a **bottom sheet** (same content as desktop drawer) [U], Safe/Mature panel, **2-column** grid with flag chips + chapter status, "Load More"/infinite scroll.
+
+### 6.4 Mobile manga detail [V80 §16 + confirmed anime mobile pattern]
+- Banner (~190–220px, blurred/zoomed art) with the **cover centred (~35% of width), overlapping the banner's bottom edge**, hairline border, radius ~20–24px.
+- **Action buttons stacked and centred, full-width within the content column** (V80) or ~175px each as on anime [U: V80 says full-width; use full-width pills, ~44px tall]: "Read First (Ch. 1)" (solid white), "Read Latest (Ch. N)" (outline), "Chapters" (ghost).
+- Centred breadcrumb-or-back link, format badge, centred H1 (~24–26px/800), muted alt title, centred wrapping chips (★ rating outlined, chapters, views, status), centred wrapping genre chips, centred clamped synopsis (~15px, line-height 1.75) with "Show More", credit line.
+- **Info panel → expandable "Info" accordion** [V80].
+- **Chapters panel:** header row "Chapters" + count; below it the search input (full width), then sort button + list/grid toggle; **rows ≥56px** with chapter number, title (1 line), **scanlator chip + page count on a second line**, date + chevron at right; **pagination** (compact: Prev, "Page X of Y", Next, with numbered pages hidden or scrollable [U]) **above and below**.
+
+### 6.5 Mobile reader [V80 §16]
+- **Default: horizontal-swipe, single-page mode** with **tap zones** (left third = previous page, right third = next page; centre tap toggles the chrome) in addition to swipe.
+- Chrome as a slim top glass bar ("‹ Ch. N / total ›" navigator + series title [U]) and a bottom glass bar (page counter + % progress; zoom control collapses to pinch-to-zoom + a fit toggle [U]). The desktop **right icon rail collapses into a single circular "more" button or a bottom row** exposing the same actions: home, library, chapters, comments, fullscreen, settings, next chapter [U layout; actions per V80].
+- Offer a **vertical-scroll mode toggle** in reader settings **only if the existing reader supports it** [U].
+- Chapter-discussion drawer and chapters drawer open as **bottom sheets** (`--bg-elevated`, top radius ~20, drag-to-close).
+- Last page shows the end-of-chapter card with "Next chapter" (white pill) and "Back to chapters".
+- Images: fit width/height to the viewport without cropping; preload the next 2 pages; skeleton + retry tile as on desktop.
+
+---
+
+## 7. MOTION AND INTERACTION (V80 §17 + confirmed behaviours)
+- Section entrance: fade + 12px slide-up, 60–80ms stagger, once, via IntersectionObserver.
+- Hero: auto-advance 6–8s, crossfade + slight scale (1.0→1.03), 600ms, pause on hover, manual control resets timer, stop when tab hidden.
+- Card hover (desktop only): lift/scale ~1.04, border brightens, heart fades in, 200ms ease-out, transform/opacity only. Green new-chapter dot: gentle pulse (≈1.6s loop), disabled with reduced motion.
+- Buttons 120ms hover; pressed scale .97. Segmented toggles slide (~250ms). Drawers/modals fade + scale-from-98% (desktop) / slide-up (mobile sheets), 150–250ms.
+- Reader: smooth chrome fade, no heavy page-turn animations beyond a short slide on mobile swipe [U].
+- Skeleton shimmer 1.5s loop in real shapes (cover rects, text bars, chapter rows).
+- Respect `prefers-reduced-motion`. Do not add effects not listed.
+
+---
+
+## 8. STATES (V80 §18)
+- Loading: skeletons matching final layout/count (cards, chapter rows, reader pages).
+- Empty search/filter: centred dark circular badge + "No results for '{query}'" + suggestion to browse genres.
+- Empty chapter list: "No chapters available yet" [U copy] with the empty-state component.
+- Error: broken-connection glyph + "Something went wrong loading this content" + Retry pill.
+- Image failure: broken-image tile + tap to retry.
+- Offline: slim top banner "You're offline — some content may not load".
+- Guest-gated actions (favourite, comment): existing sign-in prompt.
+
+---
+
+## 9. DATA, PERFORMANCE, ACCESSIBILITY
+- Data: keep current manga providers; map fields to UI (title, cover, banner, type/format, country, rating, views, status, chapters, chapter title/number/date/scanlator/pages, authors, genres, synopsis). Missing fields → hide element, never fabricate.
+- Performance: lazy-load below-fold images, eager only the hero's first image (`fetchpriority="high"`), set image dimensions/aspect-ratio, correctly sized thumbnails per slot, dedupe/cached identical requests, debounce search 250–350ms with cancellation, **code-split the reader** and the chapter drawers, **virtualise chapter lists ≥300**, limit large blurred areas. Measure before/after on the Manga page and report numbers.
+- Accessibility: `aria-label`s on every icon-only button (heart, chevrons, sort, view toggle, reader rail), `role="switch"` for toggles, visible 2px focus ring (offset 2px, accent), focus trap + Esc in drawers/modals, contrast ≥4.5:1, semantic landmarks and heading order, alt text on covers, hover-only affordances have touch/keyboard equivalents.
+
+---
+
+## 10. IMPLEMENTATION STEPS
+1. Audit (Section 3); write the gap table.
+2. Align tokens/primitives with Section 2; delete duplicated manga-only styles.
+3. Navbar/tab-bar active state on manga routes.
+4. Manga page (hero, rails, 3-col grid, grids, panel).
+5. Manga card (+ flag chip, new-chapter dot, hover) and shared Browse card integration.
+6. Browse Manga mode (toggle, filters, source toggle, format pills, Safe/Mature, grid).
+7. Manga detail page (desktop, then mobile).
+8. Chapter list (search, sort, view toggle, rows, pagination, virtualisation).
+9. Reader (desktop chrome + icon rail, then mobile swipe/tap zones, drawers, image handling).
+10. Favorites manga tab, chapter comments, states, motion.
+11. Performance pass and accessibility pass.
+12. Final report: gap table (before/after), files changed, every [U] decision, brand/data-source conflicts, performance numbers.
+
+---
+
+## 11. TESTING AND VERIFICATION CHECKLIST
+Test at 1920, 1440, 1280, 1024, 768 and phone widths 360/390/412 (portrait + landscape).
+
+**Consistency**
+- [ ] Manga routes use the same navbar/tab bar/footer as anime; "Manga" is the active nav item
+- [ ] Same fonts, colours, radii, glass, chips, buttons, section headers, empty states as anime pages; no leftover manga-only styling
+- [ ] Manga page and Home feel like the same product (hero, rails, spacing)
+
+**Directory**
+- [ ] Hero (portrait covers, type/rating/views meta), Top Viewed rail with visible chevrons + ★/eye/views, Recently Added 3-column grid (flag chip, green pulse dot, "Read Latest Chapter", status), Popular & Trending grid, Top Rated rail
+- [ ] Browse Manga mode: toggle, search, Filters drawer (Genre/Year/Status/Format/Sort + Source toggle + Format pills), Safe/Mature, grid 6/4/2 columns, load mechanism
+- [ ] Manga cards: ratio/crop correct, flag/dot/heart, ellipsis, meta row; hover on desktop only
+
+**Detail & chapters**
+- [ ] Breadcrumb, badge, H1, meta row, status pill, Show More, genres, three buttons working (first/latest/scroll), credit line
+- [ ] Chapter list: search, sort, view toggle, row anatomy, mirrored pagination "Page X of Y", virtualisation on 300+
+- [ ] Mobile detail: centred overlapping cover, stacked full-width buttons, info accordion
+
+**Reader**
+- [ ] Desktop: "‹ Ch. N / total ›", vertical scrolling pages, page counter + %, zoom (− / fit / +), right rail (home, library, chapters, comments, fullscreen, settings, next)
+- [ ] Mobile: horizontal swipe default, tap zones, chrome toggle, bottom-sheet drawers, next/previous chapter, end-of-chapter card
+- [ ] Image lazy-load/preload, skeletons, retry tile, no layout shift, no blurry upscaling
+
+**Safety/quality**
+- [ ] No existing feature regressed (auth, favourites, bookmarks, progress, Safe/Mature, search, notifications)
+- [ ] No fake data; missing fields hidden gracefully
+- [ ] No new console errors; keyboard and focus checks pass; reduced motion respected
+- [ ] Lighthouse/LCP/CLS before/after recorded
+
+---
+
+## 12. WHAT COULD NOT BE DETERMINED (report these; do not invent)
+1. **No manga reference images and no current-Manga-page capture were provided.** All manga-specific visual details (hero meta wording, "READ NOW" label, flag-chip and dot placement, chapter-row details, grid-view tiles, reader chrome behaviour, drawer styling, mobile reader layout) are inferred from V80 text and the anime-side design language.
+2. What the current Manga page looks like today, and therefore the real list of inconsistencies (Section 3 must be completed by inspecting the code).
+3. Contents of the V80 "sidebar panel" on the Manga page and of the reader's settings gear.
+4. Which manga sources the project integrates (V80 names Atsu/MangaBall only as examples).
+5. Whether the data layer supplies views, country, scanlator, page count, new-chapter flags, author/artist, characters.
+6. Chapter sort default, read/unread styling, grid-view layout, reader keyboard shortcuts, RTL/double-page modes (none specified by V80).
+7. Exact fonts, pixel sizes and colours are estimates from scaled screenshots.
+8. Brand name (Mirai vs Aniclover) and data provider (Jikan vs AniList): keep the project's existing choices.
