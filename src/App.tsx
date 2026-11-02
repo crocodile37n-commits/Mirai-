@@ -5,7 +5,6 @@ import { Footer } from './components/common/Footer';
 import { SearchModal } from './components/common/SearchModal';
 import { GlobalToast } from './components/common/GlobalToast';
 import { AuthModal } from './components/common/AuthModal';
-import { MiraiAiChatModal } from './components/ai/MiraiAiChatModal';
 
 // HomeView is loaded eagerly for instant FCP and LCP
 import { HomeView } from './components/home/HomeView';
@@ -40,7 +39,7 @@ const CreateAccountPage = lazy(() => import('./components/auth/CreateAccountPage
 const AdminDashboardView = lazy(() => import('./components/admin/AdminDashboardView').then(m => ({ default: m.AdminDashboardView })));
 
 const MainContent: React.FC = () => {
-  const { nav, aiChatOpen, setAiChatOpen } = useApp();
+  const { nav } = useApp();
 
   const isReader = nav.currentRoute === 'reader';
   const isAdmin = nav.currentRoute === 'admin';
@@ -127,7 +126,6 @@ const MainContent: React.FC = () => {
       {!isReader && !isAdmin && <Footer />}
       <SearchModal />
       <AuthModal />
-      <MiraiAiChatModal isOpen={aiChatOpen} onClose={() => setAiChatOpen(false)} />
       <GlobalToast />
     </div>
   );

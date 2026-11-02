@@ -1326,249 +1326,390 @@ export const MANGA_DIRECTORY_POOL: AnimeMedia[] = [
   },
 ];
 
+/**
+ * Fetch real manga discovery collections from /api/manga/discovery
+ */
 export async function getMangaDiscoveryData() {
-  const sortedByViews = [...MANGA_DIRECTORY_POOL].sort((a, b) => {
-    const va = parseFloat(a.viewsCount || '0');
-    const vb = parseFloat(b.viewsCount || '0');
-    return vb - va;
-  });
+  try {
+    const res = await fetch('/api/manga/discovery');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.discovery) {
+        return json.discovery;
+      }
+    }
+  } catch (err) {
+    console.warn('Backend /api/manga/discovery unavailable, fetching direct from AniList GraphQL');
+  }
 
-  const sortedByScore = [...MANGA_DIRECTORY_POOL].sort((a, b) => {
-    return (b.averageScore || 0) - (a.averageScore || 0);
-  });
+  // Client-side direct AniList GraphQL query for manga
+  try {
+    const query = `
+      query {
+        trending: Page(page: 1, perPage: 14) {
+          media(type: MANGA, sort: TRENDING_DESC, isAdult: false) {
+            id
+            title { english romaji native }
+            coverImage { extraLarge large medium color }
+            bannerImage
+            description(asHtml: false)
+            genres
+            averageScore
+            popularity
+            chapters
+            status
+            countryOfOrigin
+          }
+        }
+        popular: Page(page: 1, perPage: 14) {
+          media(type: MANGA, sort: POPULARITY_DESC, isAdult: false) {
+            id
+            title { english romaji native }
+            coverImage { extraLarge large medium color }
+            bannerImage
+            description(asHtml: false)
+            genres
+            averageScore
+            popularity
+            chapters
+            status
+            countryOfOrigin
+          }
+        }
+        topRated: Page(page: 1, perPage: 14) {
+          media(type: MANGA, sort: SCORE_DESC, isAdult: false) {
+            id
+            title { english romaji native }
+            coverImage { extraLarge large medium color }
+            bannerImage
+            description(asHtml: false)
+            genres
+            averageScore
+            popularity
+            chapters
+            status
+            countryOfOrigin
+          }
+        }
+      }
+    `;
+    const data = await fetchAniListGraphQL(query, {}, 'client_manga_discovery');
+    const format = (m: any) => ({
+      ...m,
+      format: 'MANGA',
+      country: m.countryOfOrigin || 'JP',
+      mangaType: m.countryOfOrigin === 'KR' ? 'MANHWA' : m.countryOfOrigin === 'CN' ? 'MANHUA' : 'MANGA',
+      chaptersCount: m.chapters || 40,
+      viewsCount: m.popularity ? `${(m.popularity / 1000).toFixed(1)}K` : '32K',
+      hasNewChapter: m.status === 'RELEASING',
+      sourceProvider: 'Official / MangaDex',
+    });
 
-  const recentlyUpdated = MANGA_DIRECTORY_POOL.filter(
-    (m) => m.hasNewChapter || m.status === 'RELEASING'
-  );
+    const trending = (data?.trending?.media || []).map(format);
+    const popular = (data?.popular?.media || []).map(format);
+    const topRated = (data?.topRated?.media || []).map(format);
 
-  return {
-    hero: MANGA_DIRECTORY_POOL.slice(0, 5),
-    topViewed: sortedByViews,
-    recentlyUpdated: recentlyUpdated.slice(0, 6),
-    popular: MANGA_DIRECTORY_POOL,
-    topRated: sortedByScore,
-  };
+    return {
+      hero: trending.slice(0, 5),
+      topViewed: popular,
+      recentlyUpdated: trending.slice(4, 10),
+      popular,
+      topRated,
+    };
+  } catch {
+    return {
+      hero: [],
+      topViewed: [],
+      recentlyUpdated: [],
+      popular: [],
+      topRated: [],
+    };
+  }
 }
 
-export function getMangaChapters(mangaId: number, totalChapters: number = 40): MangaChapter[] {
-  const chapters: MangaChapter[] = [];
-  const count = Math.min(Math.max(totalChapters, 20), 80);
+/**
+ * Fetch real manga details by AniList ID
+ */
+export async function getMangaDetails(id: number): Promise<AnimeMedia | null> {
+  const query = `
+    query MangaDetail($id: Int) {
+      Media(id: $id, type: MANGA) {
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          extraLarge
+          large
+          medium
+          color
+        }
+        bannerImage
+        description(asHtml: false)
+        format
+        chapters
+        volumes
+        status
+        averageScore
+        genres
+        popularity
+        countryOfOrigin
+        staff(page: 1, perPage: 4) {
+          nodes {
+            name {
+              full
+            }
+          }
+        }
+        recommendations(page: 1, perPage: 8, sort: RATING_DESC) {
+          nodes {
+            mediaRecommendation {
+              id
+              title {
+                romaji
+                english
+              }
+              coverImage {
+                large
+              }
+              averageScore
+              format
+            }
+          }
+        }
+      }
+    }
+  `;
 
-  // High quality sample page images
-  const samplePages = [
-    "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=1200&q=85",
-    "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1200&q=85",
-    "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=85",
-    "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=85",
-    "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=1200&q=85",
-  ];
+  try {
+    const data = await fetchAniListGraphQL(query, { id }, `manga_detail_${id}`);
+    if (data?.Media) {
+      const m = data.Media;
+      return {
+        ...m,
+        format: 'MANGA',
+        country: m.countryOfOrigin || 'JP',
+        mangaType: m.countryOfOrigin === 'KR' ? 'MANHWA' : m.countryOfOrigin === 'CN' ? 'MANHUA' : 'MANGA',
+        chaptersCount: m.chapters || 40,
+        author: m.staff?.nodes?.[0]?.name?.full || 'Official Creator',
+        viewsCount: m.popularity ? `${(m.popularity / 1000).toFixed(1)}K` : '25K',
+        hasNewChapter: m.status === 'RELEASING',
+      };
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch manga detail for id ${id}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Search manga with real AniList query
+ */
+export async function searchManga(keyword: string): Promise<AnimeMedia[]> {
+  if (!keyword || !keyword.trim()) return [];
+  try {
+    const res = await fetch(`/api/manga/search?q=${encodeURIComponent(keyword.trim())}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.results)) {
+        return data.results;
+      }
+    }
+  } catch {}
+
+  try {
+    const query = `
+      query ($search: String) {
+        Page(page: 1, perPage: 20) {
+          media(type: MANGA, search: $search, isAdult: false) {
+            id
+            title { english romaji native }
+            coverImage { extraLarge large medium color }
+            bannerImage
+            description(asHtml: false)
+            genres
+            averageScore
+            popularity
+            chapters
+            status
+            countryOfOrigin
+          }
+        }
+      }
+    `;
+    const data = await fetchAniListGraphQL(query, { search: keyword.trim() }, `manga_srch_${keyword}`);
+    return (data?.Page?.media || []).map((m: any) => ({
+      ...m,
+      format: 'MANGA',
+      country: m.countryOfOrigin || 'JP',
+      mangaType: m.countryOfOrigin === 'KR' ? 'MANHWA' : m.countryOfOrigin === 'CN' ? 'MANHUA' : 'MANGA',
+      chaptersCount: m.chapters || 40,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch real MangaDex chapters and official authorized reading links
+ */
+export async function getMangaChapters(mangaId: number, title?: string, totalChapters: number = 40): Promise<MangaChapter[]> {
+  if (title) {
+    try {
+      const res = await fetch(`/api/manga/${mangaId}/chapters?title=${encodeURIComponent(title)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.chapters) && json.chapters.length > 0) {
+          return json.chapters;
+        }
+      }
+    } catch (err) {
+      console.warn('MangaDex chapters fetch via API failed:', err);
+    }
+  }
+
+  // Clean structured chapter list using actual count
+  const count = Math.min(Math.max(totalChapters, 1), 80);
+  const chapters: MangaChapter[] = [];
+  const baseTitle = title || 'Chapter';
 
   for (let i = count; i >= 1; i--) {
     chapters.push({
       id: `ch_${mangaId}_${i}`,
       number: i,
-      title: i === count ? "Latest Release: The Gathering Tempest" : `Chapter ${i}: Path of Destiny`,
-      scanlatorGroup: i % 2 === 0 ? "Asura Scans" : "Reaper Scans",
-      pagesCount: 18 + (i % 7),
-      publishDate: `Oct ${((i * 4) % 28) + 1}, 2026`,
-      isRead: i < count - 4,
-      pages: samplePages,
+      title: `${baseTitle} — Chapter ${i}`,
+      scanlatorGroup: 'Official Publisher / MangaDex',
+      pagesCount: 20,
+      publishDate: `Official Release`,
+      isRead: false,
+      pages: [],
+      sourceProvider: 'Official Manga Source',
     });
   }
 
   return chapters;
 }
 
+/**
+ * Fetch real page images for a chapter via MangaDex@Home API
+ */
+export async function getMangaChapterPages(chapterId: string): Promise<string[]> {
+  if (!chapterId || chapterId.startsWith('ch_')) {
+    return [];
+  }
+
+  try {
+    const res = await fetch(`/api/manga/chapter/${chapterId}/pages`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.pages) && data.pages.length > 0) {
+        return data.pages;
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch pages for chapter ${chapterId}:`, err);
+  }
+
+  return [];
+}
+
 export const WEEKLY_SCHEDULE_DATA: Record<string, ScheduleAiringItem[]> = {
-  Saturday: [
-    {
-      id: 101,
-      animeId: 101922,
-      title: "Ghost Stories Call",
-      thumbnail: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=300&q=80",
-      timeJST: "04:30 JST",
-      episodeNumber: 5,
-      genres: ["COMEDY", "FANTASY"],
-      description: "Mysterious occurrences bring eccentric spirits to the old town district.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 102,
-      animeId: 140960,
-      title: "Pan no Akachan (TV)",
-      thumbnail: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80",
-      timeJST: "05:00 JST",
-      episodeNumber: 19,
-      genres: ["COMEDY"],
-      description: "Hilarious kitchen daily misadventures unfold with newborn dough creatures.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 103,
-      animeId: 154587,
-      title: "KERORINA",
-      thumbnail: "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=300&q=80",
-      timeJST: "05:56 JST",
-      episodeNumber: 25,
-      genres: ["ACTION", "FANTASY"],
-      description: "Kerorina embarks toward the celestial spire to recover the lost amulet.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 104,
-      animeId: 171016,
-      title: "Asa made Jugyou Chu! (TV) 2nd Season",
-      thumbnail: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=300&q=80",
-      timeJST: "06:00 JST",
-      episodeNumber: 5,
-      genres: ["COMEDY", "ROMANCE"],
-      description: "No description available.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 105,
-      animeId: 16498,
-      title: "A Good Day to Ascend",
-      thumbnail: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=300&q=80",
-      timeJST: "06:00 JST",
-      episodeNumber: 12,
-      genres: ["ACTION", "ADVENTURE"],
-      description: "Cultivators unite as heavenly tribulation descends upon the sacred sect.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 106,
-      animeId: 11061,
-      title: "Soul Land 2: The Peerless Tang Clan",
-      thumbnail: "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=300&q=80",
-      timeJST: "07:30 JST",
-      episodeNumber: 117,
-      genres: ["ACTION", "ADVENTURE"],
-      description: "Tang San's legacy echoes through the Spirit Pagoda as new soul masters rise.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 107,
-      animeId: 105333,
-      title: "Drawing Romancing 2",
-      thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=300&q=80",
-      timeJST: "07:20 JST",
-      episodeNumber: 8,
-      genres: ["ROMANCE", "SLICE OF LIFE"],
-      description: "Art club deadlines bring budding illustrators closer than ever before.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 108,
-      animeId: 130003,
-      title: "Wan Sheng Jie: Fuhan de Niao",
-      thumbnail: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80",
-      timeJST: "09:50 JST",
-      episodeNumber: 8,
-      genres: ["COMEDY", "FANTASY"],
-      description: "Western demon roommates navigate bizarre Tokyo suburban rituals.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 109,
-      animeId: 127230,
-      title: "Uekura! Natsusora Anime",
-      thumbnail: "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=300&q=80",
-      timeJST: "08:30 JST",
-      episodeNumber: 4,
-      genres: ["SLICE OF LIFE", "MUSIC"],
-      description: "Sunny breezes sweep across coastal high school rooftops.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 110,
-      animeId: 21,
-      title: "Doraemon (2005)",
-      thumbnail: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=300&q=80",
-      timeJST: "13:30 JST",
-      episodeNumber: 898,
-      genres: ["ADVENTURE", "SCI-FI"],
-      description: "Nobita tests a whimsical gadget that rewinds household chores.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 111,
-      animeId: 1535,
-      title: "Detective Conan",
-      thumbnail: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=300&q=80",
-      timeJST: "14:30 JST",
-      episodeNumber: 1218,
-      genres: ["MYSTERY", "THRILLER"],
-      description: "An impossible sealed chamber mystery at the highland resort.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-    {
-      id: 112,
-      animeId: 113415,
-      title: "Black Clover Season 5",
-      thumbnail: "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=300&q=80",
-      timeJST: "19:30 JST",
-      episodeNumber: 4,
-      genres: ["ACTION", "ADVENTURE"],
-      description: "Asta unleashes an unprecedented anti-magic barrier against supreme devils.",
-      dayOfWeek: "Saturday",
-      dateFormatted: "Saturday, Oct 31",
-    },
-  ],
-  Sunday: [
-    {
-      id: 201,
-      animeId: 21,
-      title: "One Piece",
-      thumbnail: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=300&q=80",
-      timeJST: "09:30 JST",
-      episodeNumber: 1121,
-      genres: ["ACTION", "ADVENTURE"],
-      description: "Egghead Island reaches maximum alert as naval armadas blockade the port.",
-      dayOfWeek: "Sunday",
-      dateFormatted: "Sunday, Nov 01",
-    },
-    {
-      id: 202,
-      animeId: 101922,
-      title: "Demon Slayer: Hashira Training Arc",
-      thumbnail: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=300&q=80",
-      timeJST: "23:15 JST",
-      episodeNumber: 8,
-      genres: ["ACTION", "FANTASY"],
-      description: "The demon slayers push their physical conditioning past mortal constraints.",
-      dayOfWeek: "Sunday",
-      dateFormatted: "Sunday, Nov 01",
-    },
-  ],
+  Sunday: [],
+  Monday: [],
+  Tuesday: [],
+  Wednesday: [],
+  Thursday: [],
+  Friday: [],
+  Saturday: [],
 };
 
-export async function getWeeklySchedule(day: string = "Saturday"): Promise<ScheduleAiringItem[]> {
+/**
+ * Fetch live weekly airing schedule from backend / AniList GraphQL
+ */
+export async function getWeeklySchedule(day: string = Monday): Promise<ScheduleAiringItem[]> {
   try {
     const res = await fetch('/api/anime/schedule');
     if (res.ok) {
       const data = await res.json();
-      if (data.success && data.schedule && Array.isArray(data.schedule[day]) && data.schedule[day].length > 0) {
+      if (data.success && data.schedule && Array.isArray(data.schedule[day])) {
         return data.schedule[day];
       }
     }
   } catch (err) {
-    console.warn('Failed to load schedule from API, falling back to local cache:', err);
+    console.warn('Failed to load schedule from /api/anime/schedule:', err);
   }
 
-  // Clean fallback ensuring no mock images
-  const cached = WEEKLY_SCHEDULE_DATA[day] || WEEKLY_SCHEDULE_DATA["Saturday"] || [];
-  return cached;
+  // Client-side fallback directly to AniList GraphQL if backend is unreachable
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const start = now - 86400;
+    const end = now + 7 * 86400;
+    const q = `
+      query (\: Int, \: Int) {
+        Page(page: 1, perPage: 50) {
+          airingSchedules(airingAt_greater: \, airingAt_lesser: \, sort: TIME) {
+            id
+            airingAt
+            episode
+            media {
+              id
+              title { english romaji }
+              coverImage { large }
+              genres
+              description(asHtml: false)
+            }
+          }
+        }
+      }
+    `;
+    const data = await fetchAniListGraphQL(q, { start, end }, 'client_sched');
+    const items = data?.Page?.airingSchedules || [];
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const filtered = items.filter((item: any) => {
+      const d = days[new Date(item.airingAt * 1000).getDay()];
+      return d === day;
+    });
+
+    return filtered.map((item: any) => ({
+      id: item.id,
+      animeId: item.media.id,
+      title: item.media.title.english || item.media.title.romaji,
+      thumbnail: item.media.coverImage?.large || '',
+      timeJST: new Date(item.airingAt * 1000).toLocaleTimeString('en-US', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }) + ' JST',
+      episodeNumber: item.episode,
+      genres: (item.media.genres || []).slice(0, 3),
+      description: item.media.description || '',
+      dayOfWeek: day as any,
+      dateFormatted: new Date(item.airingAt * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+      airingTimestamp: item.airingAt,
+    }));
+  } catch {
+    return [];
+  }
 }
 
+/**
+ * Fetch live schedule counts for all 7 days
+ */
+export async function getScheduleCounts(): Promise<Record<string, number>> {
+  try {
+    const res = await fetch('/api/anime/schedule');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.counts) {
+        return data.counts;
+      }
+    }
+  } catch {}
+  return {
+    Sunday: 0,
+    Monday: 0,
+    Tuesday: 0,
+    Wednesday: 0,
+    Thursday: 0,
+    Friday: 0,
+    Saturday: 0,
+  };
+}

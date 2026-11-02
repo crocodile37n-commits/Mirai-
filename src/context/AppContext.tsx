@@ -71,8 +71,6 @@ interface AppContextType {
   addComment: (animeId: number, episodeNumber: number, content: string) => void;
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
-  aiChatOpen: boolean;
-  setAiChatOpen: (open: boolean) => void;
   toast: ToastMessage | null;
   showToast: (title: string, message: string, type?: ToastMessage['type']) => void;
   dismissToast: () => void;
@@ -178,7 +176,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [searchOpen, setSearchOpen] = useState(false);
-  const [aiChatOpen, setAiChatOpen] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const showToast = useCallback((title: string, message: string, type: ToastMessage['type'] = 'info') => {
@@ -848,8 +845,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addComment,
         searchOpen,
         setSearchOpen,
-        aiChatOpen,
-        setAiChatOpen,
         toast,
         showToast,
         dismissToast,

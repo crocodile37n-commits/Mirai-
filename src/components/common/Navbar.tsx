@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, BookOpen, Compass, Calendar, Heart, Search, Bell, Eye, EyeOff, UserPlus, LogIn, LogOut, User as UserIcon, Settings as SettingsIcon, Sparkles } from 'lucide-react';
+import { Home, BookOpen, Compass, Calendar, Heart, Search, Bell, Eye, EyeOff, UserPlus, LogIn, LogOut, User as UserIcon, Settings as SettingsIcon } from 'lucide-react';
 import { BrandLogo, MiraiAvatar } from './BrandLogo';
 import { useApp } from '../../context/AppContext';
 
@@ -19,7 +19,6 @@ export const Navbar: React.FC = () => {
     isAuthenticated,
     openAuthModal,
     setSearchOpen,
-    setAiChatOpen,
     showToast,
   } = useApp();
 
@@ -154,18 +153,6 @@ export const Navbar: React.FC = () => {
               >
                 <Bell className="w-4 h-4" />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#f472b6] animate-pulse" />
-              </button>
-
-              {/* Mirai AI Button */}
-              <button
-                type="button"
-                onClick={() => setAiChatOpen(true)}
-                title="Mirai AI Assistant"
-                aria-label="Mirai AI Assistant"
-                className="h-[34px] px-3 rounded-full glass bg-gradient-to-r from-[#8b5cf6]/15 via-white/[0.04] to-[#ec4899]/15 border border-[#8b5cf6]/30 hover:border-[#8b5cf6]/60 flex items-center gap-1.5 text-xs font-semibold text-white transition-all active:scale-95 shadow-[0_0_12px_rgba(139,92,246,0.15)] cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#c084fc]" />
-                <span className="hidden lg:inline text-[11px] font-bold tracking-tight">Mirai AI</span>
               </button>
 
               {/* Auth Buttons or User Avatar with Sign Out Menu */}

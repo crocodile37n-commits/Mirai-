@@ -18,7 +18,7 @@ import {
   Globe,
   Sparkles,
 } from 'lucide-react';
-import { getMangaChapters, MANGA_DIRECTORY_POOL } from '../../services/animeApi';
+import { getMangaChapters, getMangaDetails } from '../../services/animeApi';
 import { AnimeMedia, MangaChapter } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { AccentHeading } from '../common/AccentHeading';
@@ -43,10 +43,15 @@ export const MangaDetailView: React.FC<MangaDetailViewProps> = ({ mangaId }) => 
   const CHAPTERS_PER_PAGE = 20;
 
   useEffect(() => {
-    const found = MANGA_DIRECTORY_POOL.find((m) => m.id === mangaId) || MANGA_DIRECTORY_POOL[0];
-    setManga(found);
-    const chList = getMangaChapters(found.id, found.chaptersCount || 40);
-    setChapters(chList);
+    getMangaDetails(mangaId).then((m) => {
+      if (m) {
+        setManga(m);
+        const title = m.title.english || m.title.romaji;
+        getMangaChapters(m.id, title, m.chaptersCount || 40).then((chList) => {
+          setChapters(chList);
+        });
+      }
+    });
     setCurrentPage(1);
   }, [mangaId]);
 

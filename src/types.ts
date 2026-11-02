@@ -81,6 +81,8 @@ export interface MangaChapter {
   publishDate: string;
   isRead?: boolean;
   pages: string[];
+  externalUrl?: string | null;
+  sourceProvider?: string;
 }
 
 export interface ScheduleAiringItem {

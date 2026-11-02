@@ -10,8 +10,10 @@ import {
   TrendingUp,
   Clock,
   Flame,
+  Search,
+  X,
 } from 'lucide-react';
-import { getMangaDiscoveryData } from '../../services/animeApi';
+import { getMangaDiscoveryData, searchManga } from '../../services/animeApi';
 import { AnimeMedia } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { SectionHeader } from '../common/SectionHeader';
@@ -22,6 +24,11 @@ export const MangaView: React.FC = () => {
   const [discovery, setDiscovery] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
+
+  // Manga search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<AnimeMedia[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Carousel refs for smooth horizontal scrolling
   const topViewedScrollRef = useRef<HTMLDivElement>(null);
@@ -42,6 +49,25 @@ export const MangaView: React.FC = () => {
     }, 7000);
     return () => clearInterval(interval);
   }, [discovery]);
+
+  // Search debounce effect
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    const timeout = setTimeout(() => {
+      searchManga(searchQuery.trim()).then((res) => {
+        setSearchResults(res || []);
+        setSearchLoading(false);
+      });
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
 
   const scrollContainer = (ref: React.RefObject<HTMLDivElement | null>, direction: 'left' | 'right') => {
     if (ref.current) {
@@ -178,6 +204,65 @@ export const MangaView: React.FC = () => {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* MANGA CATALOG SEARCH BAR */}
+      <section className="max-w-[1440px] mx-auto px-6 sm:px-8 mt-10">
+        <div className="relative max-w-[640px] mx-auto">
+          <div className="relative flex items-center">
+            <Search className="absolute left-4 w-4 h-4 text-white/40 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search manga catalog by title (e.g. Chainsaw Man, Dandadan, Berserk)..."
+              className="w-full h-[46px] pl-11 pr-10 rounded-full bg-[#0c0c0e] border border-white/10 hover:border-white/20 focus:border-[#8b5cf6] text-xs font-medium text-white placeholder-white/40 outline-none transition-all shadow-inner"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 p-1 rounded-full text-white/40 hover:text-white transition-colors"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Live Search Results */}
+        {searchQuery.trim() && (
+          <div className="mt-8 p-6 rounded-2xl bg-[#0c0c0e]/95 border border-white/10 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Search className="w-4 h-4 text-[#8b5cf6]" />
+                <span>Search Results for "{searchQuery}"</span>
+              </h3>
+              <span className="text-xs text-white/50">{searchResults.length} manga found</span>
+            </div>
+
+            {searchLoading ? (
+              <div className="py-12 flex items-center justify-center">
+                <div className="w-6 h-6 rounded-full border-2 border-white/20 border-t-[#8b5cf6] animate-spin" />
+              </div>
+            ) : searchResults.length === 0 ? (
+              <p className="text-xs text-white/50 text-center py-8">
+                No manga found matching "{searchQuery}". Try another keyword or author.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {searchResults.map((manga) => (
+                  <PosterCard
+                    key={manga.id}
+                    anime={manga}
+                    onClick={() => navigateToMangaDetail(manga.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* 1.1 TOP VIEWED TITLES: Horizontal rail with visible circular chevrons */}
