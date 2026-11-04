@@ -186,7 +186,7 @@ export const Navbar: React.FC = () => {
                     aria-label="User Account Menu"
                     className="relative rounded-full focus-visible:ring-2 focus-visible:ring-white transition-transform active:scale-95"
                   >
-                    <MiraiAvatar size={36} />
+                    <MiraiAvatar size={36} avatarUrl={userProfile?.avatarUrl} />
                   </button>
 
                   {/* Account Dropdown Menu */}

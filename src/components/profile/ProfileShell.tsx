@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   User,
   Clock,
@@ -8,6 +8,7 @@ import {
   Settings,
   Camera,
   LogOut,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { MiraiAvatar } from '../common/BrandLogo';
@@ -17,7 +18,79 @@ interface ProfileShellProps {
 }
 
 export const ProfileShell: React.FC<ProfileShellProps> = ({ children }) => {
-  const { nav, navigateToProfile, userProfile, isAuthenticated, openAuthModal, favorites, continueWatching, comments, logout } = useApp();
+  const {
+    nav,
+    navigateToProfile,
+    userProfile,
+    isAuthenticated,
+    openAuthModal,
+    favorites,
+    continueWatching,
+    comments,
+    logout,
+    updateUserProfile,
+    showToast,
+  } = useApp();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleAvatarFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Invalid File', 'Please select a valid image file (JPG, PNG, WebP).', 'error');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('File Too Large', 'Avatar image must be under 5MB.', 'error');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = reader.result as string;
+        try {
+          const res = await fetch('/api/user/avatar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatar: base64Data }),
+          });
+
+          const data = await res.json();
+          if (res.ok && data.avatarUrl) {
+            updateUserProfile({ avatarUrl: data.avatarUrl });
+            showToast('Avatar Updated', 'Profile photo uploaded successfully!', 'success');
+          } else {
+            // Local fallback if offline
+            updateUserProfile({ avatarUrl: base64Data });
+            showToast('Avatar Updated', 'Profile photo updated locally.', 'success');
+          }
+        } catch {
+          updateUserProfile({ avatarUrl: base64Data });
+          showToast('Avatar Updated', 'Profile photo updated locally.', 'success');
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setIsUploading(false);
+      showToast('Upload Failed', 'Could not process the selected image.', 'error');
+    }
+  };
+
+  const handleCameraClick = () => {
+    if (!isAuthenticated) {
+      openAuthModal('sign-in');
+      return;
+    }
+    fileInputRef.current?.click();
+  };
 
   const menuItems = [
     { id: 'profile' as const, label: 'Profile', icon: User },
@@ -42,15 +115,31 @@ export const ProfileShell: React.FC<ProfileShellProps> = ({ children }) => {
         <aside className="w-full lg:w-[250px] flex-shrink-0 rounded-[24px] bg-[#0c0c0e] border border-white/[0.08] p-5 shadow-xl flex flex-col items-center">
           {/* Avatar with Camera badge */}
           <div className="relative mt-2">
-            <MiraiAvatar size={100} className="border-2 border-white/20" />
+            <MiraiAvatar
+              size={100}
+              avatarUrl={userProfile?.avatarUrl}
+              className="border-2 border-white/20"
+            />
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/png,image/jpeg,image/webp,image/jpg"
+              className="hidden"
+              onChange={handleAvatarFileSelect}
+            />
             <button
               type="button"
-              onClick={() => openAuthModal('create-account')}
-              className="absolute bottom-0 right-0 w-[24px] h-[24px] rounded-full bg-white text-black flex items-center justify-center shadow hover:scale-105 active:scale-95 transition-transform"
-              title="Change avatar"
-              aria-label="Change avatar"
+              onClick={handleCameraClick}
+              disabled={isUploading}
+              className="absolute bottom-0 right-0 w-[26px] h-[26px] rounded-full bg-white text-black flex items-center justify-center shadow hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              title="Upload new profile picture"
+              aria-label="Upload new profile picture"
             >
-              <Camera className="w-3 h-3 stroke-[2.5]" />
+              {isUploading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Camera className="w-3.5 h-3.5 stroke-[2.5]" />
+              )}
             </button>
           </div>
 

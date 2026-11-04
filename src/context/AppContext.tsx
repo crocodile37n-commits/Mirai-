@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { AnimeMedia, UserProfile, UserSettings, WatchProgress, CommentItem } from '../types';
+import { getAuthToken, setAuthToken, clearAuthTokens, authFetch } from '../services/authClient';
 
 interface NavigationState {
   currentRoute: 'home' | 'browse' | 'detail' | 'watch' | 'profile' | 'manga' | 'schedule' | 'favorites' | 'manga-detail' | 'reader' | 'signin' | 'signup' | 'admin';
@@ -217,10 +218,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
-  // Check current session from HTTP-only cookie on mount
+  // Check current session from Bearer token & cookie on mount
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/auth/me')
+    authFetch('/api/auth/me')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!isMounted) return;
@@ -242,11 +243,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
           (profile as any).role = u.role;
           setUserProfile(profile);
-          setIsAdmin(Boolean(data.isAdmin || u.role === 'admin'));
+          const isUserAdmin = Boolean(data.isAdmin || u.role === 'admin');
+          setIsAdmin(isUserAdmin);
           try {
             localStorage.setItem('mirai_auth_user', JSON.stringify(profile));
           } catch {}
           refreshWatchHistory();
+        } else if (data && !data.authenticated && getAuthToken()) {
+          // Token expired or invalidated on server
+          clearAuthTokens();
+          setUserProfile(null);
+          setIsAdmin(false);
         }
       })
       .catch(() => {});
@@ -570,6 +577,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       const u = data.user;
+      if (data.token) {
+        setAuthToken(data.token);
+      }
+
       const profile: UserProfile = {
         id: u.id,
         fullName: u.fullName || u.username,
@@ -612,7 +623,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     password: string
   ): Promise<AuthResponse> => {
     try {
-      const res = await fetch('/api/admin/login', {
+      const res = await authFetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -626,7 +637,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, error: data.error || 'Invalid administrator credentials.' };
       }
 
-      const u = data.user;
+      const u = data.user || data.admin;
+      if (data.token) {
+        setAuthToken(data.token);
+      }
+
       const profile: UserProfile = {
         id: u.id,
         fullName: u.fullName || u.username,
@@ -683,6 +698,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       const u = resData.user;
+      if (resData.token) {
+        setAuthToken(resData.token);
+      }
+
       const profile: UserProfile = {
         id: u.id,
         fullName: u.fullName || u.username,
@@ -719,11 +738,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const logout = async () => {
     try {
       await Promise.allSettled([
-        fetch('/api/auth/logout', { method: 'POST' }),
-        fetch('/api/admin/logout', { method: 'POST' }),
+        authFetch('/api/auth/logout', { method: 'POST' }),
+        authFetch('/api/admin/logout', { method: 'POST' }),
       ]);
     } catch {}
 
+    clearAuthTokens();
     setUserProfile(null);
     setIsAdmin(false);
     try {

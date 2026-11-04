@@ -93,8 +93,8 @@ export const MangaDetailView: React.FC<MangaDetailViewProps> = ({ mangaId }) => 
     showToast('Link Copied', `Share link for "${displayTitle}" copied to clipboard.`, 'info');
   };
 
-  // Recommended related series
-  const relatedPool = MANGA_DIRECTORY_POOL.filter((m) => m.id !== manga.id).slice(0, 6);
+  // Recommended related series from AniList
+  const relatedPool = (manga.recommendations?.nodes?.map((n) => n.mediaRecommendation).filter(Boolean) || []) as AnimeMedia[];
 
   return (
     <div className="w-full min-h-screen bg-[#060607] text-white select-none pb-24">
@@ -421,8 +421,26 @@ export const MangaDetailView: React.FC<MangaDetailViewProps> = ({ mangaId }) => 
             </div>
           )}
 
-          {/* Chapter Content: List or Grid */}
-          {viewMode === 'list' ? (
+          {/* Chapter Content: List, Grid, or Clean Empty State */}
+          {chapters.length === 0 ? (
+            <div className="rounded-2xl bg-[#0c0c0e] border border-white/[0.08] p-10 text-center space-y-3">
+              <BookOpen className="w-10 h-10 text-white/30 mx-auto" />
+              <h4 className="font-heading text-sm font-bold text-white">No Chapters Indexed</h4>
+              <p className="text-xs text-white/50 max-w-[420px] mx-auto leading-relaxed">
+                Chapters for this manga will appear once synchronized from your MangaDex or backend provider adapter.
+              </p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="rounded-2xl bg-[#0c0c0e] border border-white/[0.08] p-10 text-center space-y-2">
+              <p className="text-xs text-white/40">No chapters match "{searchQuery}"</p>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-xs font-semibold text-[#c084fc] hover:underline"
+              >
+                Clear Search Filter
+              </button>
+            </div>
+          ) : viewMode === 'list' ? (
             <div className="rounded-2xl bg-[#0c0c0e] border border-white/[0.08] divide-y divide-white/[0.04] overflow-hidden">
               {paginatedChapters.map((ch) => (
                 <div
@@ -512,7 +530,7 @@ export const MangaDetailView: React.FC<MangaDetailViewProps> = ({ mangaId }) => 
             className="mb-6"
           />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-5">
-            {relatedPool.map((item) => (
+            {relatedPool.map((item: AnimeMedia) => (
               <PosterCard key={item.id} anime={item} showHoverPreview={false} />
             ))}
           </div>

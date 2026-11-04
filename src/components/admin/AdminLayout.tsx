@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
+  Boxes,
+  Tv,
+  Video,
+  Layers,
   Film,
-  BookOpen,
+  Clapperboard,
+  Globe2,
+  RefreshCw,
   Users,
   BarChart3,
-  Server,
-  ShieldAlert,
   Settings,
+  FileText,
   ExternalLink,
   Search,
   Bell,
@@ -24,12 +29,18 @@ import { useApp } from '../../context/AppContext';
 
 export type AdminTab =
   | 'overview'
-  | 'catalog'
+  | 'plugins'
+  | 'anime-providers'
+  | 'movie-providers'
+  | 'streaming-sources'
+  | 'anime-management'
+  | 'movie-management'
+  | 'language-settings'
+  | 'sync-manager'
   | 'users'
   | 'analytics'
-  | 'system'
-  | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'system-logs';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -47,13 +58,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }>; badge?: string }> = [
-    { id: 'overview', label: 'Dashboard & Metrics', icon: LayoutDashboard },
-    { id: 'catalog', label: 'Media Catalog', icon: Film, badge: '1.2k' },
-    { id: 'analytics', label: 'Traffic & Streams', icon: BarChart3 },
-    { id: 'users', label: 'User Directory', icon: Users },
-    { id: 'system', label: 'CDN & Health', icon: Server, badge: '99.9%' },
-    { id: 'reports', label: 'Moderation & Logs', icon: ShieldAlert },
-    { id: 'settings', label: 'Platform Config', icon: Settings },
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'plugins', label: 'Plugin Manager', icon: Boxes, badge: 'Vega' },
+    { id: 'anime-providers', label: 'Anime Providers', icon: Tv },
+    { id: 'movie-providers', label: 'Movie Providers', icon: Video },
+    { id: 'streaming-sources', label: 'Streaming Sources', icon: Layers },
+    { id: 'anime-management', label: 'Anime Management', icon: Film },
+    { id: 'movie-management', label: 'Movie Management', icon: Clapperboard, badge: 'New' },
+    { id: 'language-settings', label: 'Language & Audio Settings', icon: Globe2 },
+    { id: 'sync-manager', label: 'Sync Manager', icon: RefreshCw },
+    { id: 'users', label: 'Users', icon: Users },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'settings', label: 'Website Settings', icon: Settings },
+    { id: 'system-logs', label: 'System Logs', icon: FileText },
   ];
 
   const handleNavClick = (tabId: AdminTab) => {
@@ -175,7 +192,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         <div className="p-3.5 border-t border-white/[0.08] bg-black/40">
           <div className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <div className="flex items-center gap-2.5 min-w-0">
-              <MiraiAvatar size={34} />
+              <MiraiAvatar size={34} avatarUrl={userProfile?.avatarUrl} />
               <div className="min-w-0">
                 <p className="text-xs font-bold text-white truncate">
                   {userProfile?.fullName || userProfile?.username || 'Admin Operator'}
@@ -221,13 +238,29 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <h1 className="font-heading text-sm sm:text-base font-extrabold text-white tracking-tight">
                 {activeTab === 'overview'
                   ? 'Real-Time Operational Analytics'
-                  : activeTab === 'catalog'
-                  ? 'Content & Title Management'
+                  : activeTab === 'plugins'
+                  ? 'Vega Streaming Plugins & Providers'
+                  : activeTab === 'anime-providers'
+                  ? 'Anime Streaming Providers'
+                  : activeTab === 'movie-providers'
+                  ? 'Movie Streaming Providers'
+                  : activeTab === 'streaming-sources'
+                  ? 'Streaming Sources & CDN Mirrors'
+                  : activeTab === 'anime-management'
+                  ? 'Anime Catalog Management'
+                  : activeTab === 'movie-management'
+                  ? 'Movie Catalog Management'
+                  : activeTab === 'language-settings'
+                  ? 'Smart Language & Dubbing Configuration'
+                  : activeTab === 'sync-manager'
+                  ? 'Incremental Sync Engine'
                   : activeTab === 'analytics'
                   ? 'Traffic & Streaming Telemetry'
-                  : activeTab === 'system'
-                  ? 'Server Nodes & CDN Health'
-                  : 'Platform Administration'}
+                  : activeTab === 'users'
+                  ? 'User Directory & Access Control'
+                  : activeTab === 'system-logs'
+                  ? 'System Logs & Security Audit'
+                  : 'Platform Configuration'}
               </h1>
             </div>
           </div>

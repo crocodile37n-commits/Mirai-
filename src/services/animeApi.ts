@@ -399,7 +399,7 @@ export async function getAnimeDetails(id: number): Promise<AnimeMedia | null> {
  * Generate realistic episode list for streaming player using real provider episodes or clean anime metadata
  */
 export function generateEpisodesForAnime(anime: AnimeMedia): EpisodeItem[] {
-  // 1. If genuine streaming episodes exist from AniList/provider, use them directly
+  // If genuine streaming episodes exist from AniList/provider, map them
   if (anime.streamingEpisodes && anime.streamingEpisodes.length > 0) {
     return anime.streamingEpisodes.map((ep, idx) => {
       const match = ep.title.match(/Episode\s+(\d+)/i);
@@ -410,7 +410,9 @@ export function generateEpisodesForAnime(anime: AnimeMedia): EpisodeItem[] {
       }
 
       const baseRating = anime.averageScore ? +(anime.averageScore / 10).toFixed(1) : 8.5;
-      const releaseLabel = anime.seasonYear ? `${anime.season ? anime.season.charAt(0) + anime.season.slice(1).toLowerCase() : ''} ${anime.seasonYear}`.trim() : 'Official Release';
+      const releaseLabel = anime.seasonYear
+        ? `${anime.season ? anime.season.charAt(0) + anime.season.slice(1).toLowerCase() : ''} ${anime.seasonYear}`.trim()
+        : 'Official Release';
 
       return {
         number: epNum,
@@ -421,32 +423,15 @@ export function generateEpisodesForAnime(anime: AnimeMedia): EpisodeItem[] {
         rating: Math.min(baseRating, 9.9),
         airDate: releaseLabel,
         isWatched: false,
+        hasSub: true,
+        hasDub: false,
       };
     });
   }
 
-  // 2. Realistic episode list derived from actual anime title and specifications
-  const total = anime.episodes || 12;
-  const count = Math.min(Math.max(total, 1), 48);
-  const episodes: EpisodeItem[] = [];
-  const baseTitle = anime.title.english || anime.title.romaji || 'Episode';
-  const baseRating = anime.averageScore ? +(anime.averageScore / 10).toFixed(1) : 8.4;
-  const releaseLabel = anime.seasonYear ? `${anime.season ? anime.season.charAt(0) + anime.season.slice(1).toLowerCase() : ''} ${anime.seasonYear}`.trim() : 'HD Stream';
-
-  for (let i = 1; i <= count; i++) {
-    episodes.push({
-      number: i,
-      title: `${baseTitle} — Episode ${i}`,
-      thumbnail: anime.bannerImage || anime.coverImage.large,
-      description: `Watch Episode ${i} of ${baseTitle} in high definition.`,
-      duration: anime.duration ? `${anime.duration}m` : '24m',
-      rating: Math.min(+(baseRating + ((i * 3) % 10) / 20).toFixed(1), 9.9),
-      airDate: releaseLabel,
-      isWatched: false,
-    });
-  }
-
-  return episodes;
+  // When no actual streaming episode data is available yet, return empty list
+  // The UI displays a clean, elegant empty state rather than fake generated episodes.
+  return [];
 }
 
 // -------------------------------------------------------------
@@ -1628,7 +1613,7 @@ export const WEEKLY_SCHEDULE_DATA: Record<string, ScheduleAiringItem[]> = {
 /**
  * Fetch live weekly airing schedule from backend / AniList GraphQL
  */
-export async function getWeeklySchedule(day: string = Monday): Promise<ScheduleAiringItem[]> {
+export async function getWeeklySchedule(day: string = "Monday"): Promise<ScheduleAiringItem[]> {
   try {
     const res = await fetch('/api/anime/schedule');
     if (res.ok) {

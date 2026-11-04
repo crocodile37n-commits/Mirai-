@@ -240,67 +240,96 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({ animeId }) => 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                 <AccentHeading
                   title="Select Episode"
-                  subtext={`${episodes.length} released episodes`}
+                  subtext={
+                    episodes.length > 0
+                      ? `${episodes.length} released episodes`
+                      : 'Awaiting provider synchronization'
+                  }
                   size="md"
                 />
 
-                <span className="text-xs text-white/40 font-medium">
-                  {startEp}–{endEp} of {episodes.length}
-                </span>
+                {episodes.length > 0 && (
+                  <span className="text-xs text-white/40 font-medium">
+                    {startEp}–{endEp} of {episodes.length}
+                  </span>
+                )}
               </div>
 
-              {/* Episode Search & Range Pager */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 mb-5">
-                <div className="relative w-full sm:flex-1">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                  <input
-                    type="text"
-                    value={episodeSearch}
-                    onChange={(e) => setEpisodeSearch(e.target.value)}
-                    placeholder={`Find episode 1–${episodes.length}`}
-                    className="w-full h-[36px] pl-9 pr-4 rounded-full bg-[#0c0c0e] border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/20"
-                  />
+              {episodes.length === 0 ? (
+                /* Clean Empty Episode State */
+                <div className="p-8 rounded-[16px] bg-[#0c0c0e] border border-white/[0.08] text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-white/40">
+                    <Play className="w-5 h-5 ml-0.5" />
+                  </div>
+                  <h4 className="font-heading text-sm font-bold text-white">No Indexed Episodes Yet</h4>
+                  <p className="text-xs text-white/50 max-w-[420px] mx-auto leading-relaxed">
+                    Episode streams for this title have not been indexed by your provider adapter. Once a streaming source is attached, playable episodes will automatically appear here.
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => navigateToWatch(anime.id, 1)}
+                      className="px-5 py-2 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all active:scale-95 shadow-md"
+                    >
+                      Open Player Standby
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  {/* Episode Search & Range Pager */}
+                  <div className="flex flex-col sm:flex-row items-center gap-3 mb-5">
+                    <div className="relative w-full sm:flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <input
+                        type="text"
+                        value={episodeSearch}
+                        onChange={(e) => setEpisodeSearch(e.target.value)}
+                        placeholder={`Find episode 1–${episodes.length}`}
+                        className="w-full h-[36px] pl-9 pr-4 rounded-full bg-[#0c0c0e] border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/20"
+                      />
+                    </div>
 
-                {/* Range Selector Group */}
-                <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                  <button
-                    onClick={() => setEpisodePage((p) => Math.max(0, p - 1))}
-                    disabled={episodePage === 0}
-                    className="w-8 h-8 rounded-full bg-[#0c0c0e] border border-white/10 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
-                    aria-label="Previous episode range"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
+                    {/* Range Selector Group */}
+                    <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                      <button
+                        onClick={() => setEpisodePage((p) => Math.max(0, p - 1))}
+                        disabled={episodePage === 0}
+                        className="w-8 h-8 rounded-full bg-[#0c0c0e] border border-white/10 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+                        aria-label="Previous episode range"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
 
-                  <div className="h-[36px] px-3.5 rounded-full bg-[#0c0c0e] border border-white/10 text-xs font-semibold text-white flex items-center gap-1">
-                    <span>Episodes {startEp}–{endEp}</span>
+                      <div className="h-[36px] px-3.5 rounded-full bg-[#0c0c0e] border border-white/10 text-xs font-semibold text-white flex items-center gap-1">
+                        <span>Episodes {startEp}–{endEp}</span>
+                      </div>
+
+                      <button
+                        onClick={() => setEpisodePage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={episodePage >= totalPages - 1}
+                        className="w-8 h-8 rounded-full bg-[#0c0c0e] border border-white/10 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+                        aria-label="Next episode range"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  <button
-                    onClick={() => setEpisodePage((p) => Math.min(totalPages - 1, p + 1))}
-                    disabled={episodePage >= totalPages - 1}
-                    className="w-8 h-8 rounded-full bg-[#0c0c0e] border border-white/10 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-30 disabled:pointer-events-none"
-                    aria-label="Next episode range"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Episode Pills: ~105x34px, wrapping */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                {displayedEpisodes.map((ep) => (
-                  <button
-                    key={ep.number}
-                    onClick={() => navigateToWatch(anime.id, ep.number)}
-                    className="h-[34px] px-3 rounded-full border border-white/15 bg-[#0c0c0e] hover:bg-white/10 hover:border-white/30 text-xs font-semibold text-white/90 hover:text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 group"
-                  >
-                    <Play className="w-3 h-3 text-[#8b5cf6] group-hover:scale-110 transition-transform" />
-                    <span>Episode {ep.number}</span>
-                  </button>
-                ))}
-              </div>
+                  {/* Episode Pills: ~105x34px, wrapping */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                    {displayedEpisodes.map((ep) => (
+                      <button
+                        key={ep.number}
+                        onClick={() => navigateToWatch(anime.id, ep.number)}
+                        className="h-[34px] px-3 rounded-full border border-white/15 bg-[#0c0c0e] hover:bg-white/10 hover:border-white/30 text-xs font-semibold text-white/90 hover:text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 group"
+                      >
+                        <Play className="w-3 h-3 text-[#8b5cf6] group-hover:scale-110 transition-transform" />
+                        <span>Episode {ep.number}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
 
               {/* CHARACTERS (Accent-bar): 3-column grid with circular avatar */}
               <div className="mt-12 pt-8 border-t border-white/10">

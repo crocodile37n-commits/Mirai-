@@ -78,42 +78,68 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ className = '', size = 'md
   );
 };
 
-export const MiraiAvatar: React.FC<{ size?: number; className?: string }> = ({
+export const MiraiAvatar: React.FC<{
+  size?: number;
+  className?: string;
+  avatarUrl?: string | null;
+  onClick?: () => void;
+  alt?: string;
+}> = ({
   size = 40,
   className = '',
+  avatarUrl,
+  onClick,
+  alt = 'Avatar',
 }) => {
+  const [imgFailed, setImgFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgFailed(false);
+  }, [avatarUrl]);
+
   return (
     <div
+      onClick={onClick}
       style={{ width: size, height: size }}
-      className={`rounded-full bg-[#121216] border border-white/20 flex items-center justify-center overflow-hidden shadow-inner ${className}`}
+      className={`rounded-full bg-[#121216] border border-white/20 flex items-center justify-center overflow-hidden shadow-inner flex-shrink-0 ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      <svg
-        viewBox="0 0 32 32"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="w-3/5 h-3/5 drop-shadow-[0_0_6px_rgba(139,92,246,0.8)]"
-      >
-        <path
-          d="M16 5L26 11V21L16 27L6 21V11L16 5Z"
-          fill="url(#avatar-grad)"
+      {avatarUrl && !imgFailed ? (
+        <img
+          src={avatarUrl}
+          alt={alt}
+          onError={() => setImgFailed(true)}
+          className="w-full h-full object-cover rounded-full"
         />
-        <path
-          d="M11 19V13L16 17.5L21 13V19"
-          stroke="#ffffff"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <defs>
-          <linearGradient id="avatar-grad" x1="6" y1="5" x2="26" y2="27" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#8b5cf6" />
-            <stop offset="1" stopColor="#ec4899" />
-          </linearGradient>
-        </defs>
-      </svg>
+      ) : (
+        <svg
+          viewBox="0 0 32 32"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-3/5 h-3/5 drop-shadow-[0_0_6px_rgba(139,92,246,0.8)]"
+        >
+          <path
+            d="M16 5L26 11V21L16 27L6 21V11L16 5Z"
+            fill="url(#avatar-grad)"
+          />
+          <path
+            d="M11 19V13L16 17.5L21 13V19"
+            stroke="#ffffff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <defs>
+            <linearGradient id="avatar-grad" x1="6" y1="5" x2="26" y2="27" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#8b5cf6" />
+              <stop offset="1" stopColor="#ec4899" />
+            </linearGradient>
+          </defs>
+        </svg>
+      )}
     </div>
   );
 };
 
 // Backwards-compatibility alias
 export const PurpleCloverAvatar = MiraiAvatar;
+

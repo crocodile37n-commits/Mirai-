@@ -3,39 +3,34 @@
  * Manages administrative API interactions with Bearer token authentication.
  */
 
-const TOKEN_KEY = 'mirai_admin_session_token';
+import { getAuthToken, setAuthToken, clearAuthTokens } from './authClient';
 
 export function getStoredAdminToken(): string | null {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return getAuthToken();
 }
 
 export function setStoredAdminToken(token: string): void {
-  try {
-    sessionStorage.setItem(TOKEN_KEY, token);
-  } catch {}
+  setAuthToken(token);
 }
 
 export function removeStoredAdminToken(): void {
-  try {
-    sessionStorage.removeItem(TOKEN_KEY);
-  } catch {}
+  clearAuthTokens();
 }
 
 async function adminFetch<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredAdminToken();
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
+  headers.set('Accept', 'application/json');
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+    headers.set('x-admin-token', token);
   }
 
   const response = await fetch(endpoint, {
     ...options,
     headers,
+    credentials: 'include',
   });
 
   const data = await response.json().catch(() => ({}));
@@ -58,12 +53,12 @@ export const adminApi = {
       authenticated: boolean;
       adminEmail?: string;
       role?: string;
-    }>('/api/admin/auth/status');
+    }>('/api/admin/check');
   },
 
   async setup(email: string, password: string) {
     const res = await adminFetch<{ success: boolean; token: string; admin: any }>(
-      '/api/admin/auth/setup',
+      '/api/admin/login',
       {
         method: 'POST',
         body: JSON.stringify({ email, password }),
@@ -74,8 +69,8 @@ export const adminApi = {
   },
 
   async login(email: string, password: string) {
-    const res = await adminFetch<{ success: boolean; token: string; admin: any }>(
-      '/api/admin/auth/login',
+    const res = await adminFetch<{ success: boolean; token: string; admin: any; user: any }>(
+      '/api/admin/login',
       {
         method: 'POST',
         body: JSON.stringify({ email, password }),
@@ -87,7 +82,7 @@ export const adminApi = {
 
   async logout() {
     try {
-      await adminFetch('/api/admin/auth/logout', { method: 'POST' });
+      await adminFetch('/api/admin/logout', { method: 'POST' });
     } finally {
       removeStoredAdminToken();
     }

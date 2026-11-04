@@ -37,6 +37,16 @@ import {
 import { AdminLayout, AdminTab } from './AdminLayout';
 import { useApp } from '../../context/AppContext';
 import { BrandLogo } from '../common/BrandLogo';
+import { authFetch, getAuthToken } from '../../services/authClient';
+import { PluginManagerView } from './views/PluginManagerView';
+import { MovieManagementView } from './views/MovieManagementView';
+import { StreamingSourcesView } from './views/StreamingSourcesView';
+import { LanguageSettingsView } from './views/LanguageSettingsView';
+import { SyncManagerView } from './views/SyncManagerView';
+import { SystemLogsView } from './views/SystemLogsView';
+import { AnimeManagementView } from './views/AnimeManagementView';
+import { AnalyticsView } from './views/AnalyticsView';
+import { SettingsView } from './views/SettingsView';
 
 interface AdminOverviewData {
   totalUsers: number;
@@ -105,15 +115,13 @@ export const AdminDashboardView: React.FC = () => {
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [usersLoading, setUsersLoading] = useState(false);
 
-  // Fetch real overview metrics
+  // Fetch real overview metrics using authenticated client
   const fetchOverview = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch('/api/admin/overview');
+      const res = await authFetch('/api/admin/overview');
       if (res.status === 401 || res.status === 403) {
         setAccessDenied(true);
-        setIsLoading(false);
-        setIsRefreshing(false);
         return;
       }
       if (res.ok) {
@@ -154,7 +162,7 @@ export const AdminDashboardView: React.FC = () => {
       if (userSearchQuery.trim()) params.set('search', userSearchQuery.trim());
       if (userStatusFilter !== 'all') params.set('status', userStatusFilter);
 
-      const res = await fetch(`/api/admin/users?${params.toString()}`);
+      const res = await authFetch(`/api/admin/users?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setUsersList(data.users || []);
@@ -167,19 +175,24 @@ export const AdminDashboardView: React.FC = () => {
   }, [userSearchQuery, userStatusFilter]);
 
   useEffect(() => {
-    fetchOverview();
-  }, [fetchOverview]);
+    // If user is admin or we have a token, attempt overview fetch
+    if (isAdmin || getAuthToken()) {
+      fetchOverview();
+    } else {
+      setIsLoading(false);
+    }
+  }, [isAdmin, fetchOverview]);
 
   useEffect(() => {
-    if (activeTab === 'users') {
+    if (activeTab === 'users' && isAdmin) {
       fetchUsers();
     }
-  }, [activeTab, fetchUsers]);
+  }, [activeTab, isAdmin, fetchUsers]);
 
   const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'active' ? 'suspended' : 'active';
     try {
-      const res = await fetch(`/api/admin/users/${userId}/status`, {
+      const res = await authFetch(`/api/admin/users/${userId}/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
@@ -278,7 +291,73 @@ export const AdminDashboardView: React.FC = () => {
     }
   };
 
-  // If user is not authenticated as administrator, render the Admin Login Page
+  // 1. Loading state while session verification is running
+  if (isLoading && !overview.totalUsers && getAuthToken()) {
+    return (
+      <div className="min-h-screen bg-[#060607] text-white flex flex-col items-center justify-center p-4 select-none relative overflow-hidden font-sans">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#8b5cf6]/10 blur-[120px] pointer-events-none rounded-full" />
+        <div className="relative z-10 flex flex-col items-center text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/15 border border-[#8b5cf6]/30 text-[#c084fc] flex items-center justify-center shadow-[0_0_24px_rgba(139,92,246,0.35)]">
+            <Loader2 className="w-6 h-6 animate-spin" />
+          </div>
+          <div>
+            <h2 className="font-heading text-lg font-bold text-white tracking-tight">Verifying Administrator Privileges</h2>
+            <p className="text-xs text-white/40 mt-1">Connecting securely to MIRAI Control Center...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Normal user is authenticated, but does NOT have admin role: show strict Access Denied screen
+  if (userProfile && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-[#060607] text-white flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden font-sans">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-red-500/10 blur-[140px] pointer-events-none rounded-full" />
+        <div className="relative z-10 w-full max-w-[440px] rounded-3xl bg-[#0c0c0e]/95 border border-red-500/20 p-7 sm:p-9 shadow-[0_24px_64px_rgba(0,0,0,0.85)] backdrop-blur-2xl text-center">
+          <div className="w-14 h-14 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 mx-auto flex items-center justify-center mb-4 shadow-[0_0_24px_rgba(239,68,68,0.25)]">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <h1 className="font-heading text-2xl font-black text-white tracking-tight">
+            Administrator Access Denied
+          </h1>
+          <p className="text-xs text-white/60 mt-2 leading-relaxed">
+            You are currently signed in as <span className="font-mono text-purple-300 font-bold">@{userProfile.username}</span> ({userProfile.email}). This account does not possess administrator credentials or root privileges.
+          </p>
+
+          <div className="mt-6 p-3.5 rounded-xl bg-white/[0.03] border border-white/10 text-left text-xs space-y-1.5 text-white/60">
+            <div className="flex items-center justify-between text-white/40 text-[10px] uppercase font-bold tracking-wider">
+              <span>Account Status</span>
+              <span className="text-amber-400">Restricted User</span>
+            </div>
+            <div>Only designated server administrators are permitted to enter this console.</div>
+          </div>
+
+          <div className="mt-6 flex flex-col sm:flex-row items-center gap-3">
+            <button
+              onClick={navigateToHome}
+              className="w-full h-11 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-heading font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>← Return to MIRAI Homepage</span>
+            </button>
+            <button
+              onClick={async () => {
+                await logout();
+                setAdminEmailInput('');
+                setAdminPasswordInput('');
+                setAccessDenied(false);
+              }}
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-[#8b5cf6] to-[#7c3aed] text-white text-xs font-heading font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+            >
+              <span>Sign In as Admin</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Unauthenticated or session expired: render the Admin Login Page
   if (accessDenied || !isAdmin) {
     return (
       <div className="min-h-screen bg-[#060607] text-white flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden font-sans">
@@ -448,13 +527,19 @@ export const AdminDashboardView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="font-heading text-2xl sm:text-3xl font-black text-white tracking-tight">
-                {activeTab === 'overview' && 'System Overview'}
+                {activeTab === 'overview' && 'System Overview & Telemetry'}
+                {activeTab === 'plugins' && 'Plugin Manager'}
+                {activeTab === 'anime-providers' && 'Anime Streaming Providers'}
+                {activeTab === 'movie-providers' && 'Movie Streaming Providers'}
+                {activeTab === 'streaming-sources' && 'Streaming Sources & Resolvers'}
+                {activeTab === 'anime-management' && 'Anime Catalog Management'}
+                {activeTab === 'movie-management' && 'Movie Catalog Management'}
+                {activeTab === 'language-settings' && 'Smart Language & Dubbing Settings'}
+                {activeTab === 'sync-manager' && 'Smart Sync Manager'}
                 {activeTab === 'users' && 'User Directory & Permissions'}
-                {activeTab === 'catalog' && 'Media Catalog Management'}
                 {activeTab === 'analytics' && 'Traffic & Analytics'}
-                {activeTab === 'system' && 'Infrastructure & Health'}
-                {activeTab === 'reports' && 'Audit Logs & Security'}
-                {activeTab === 'settings' && 'Platform Configuration'}
+                {activeTab === 'settings' && 'Website Settings'}
+                {activeTab === 'system-logs' && 'System Logs & Security Audit'}
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] bg-[#22c55e]/15 border border-[#22c55e]/30 text-[#22c55e] text-[10px] font-bold">
                 OPERATIONAL
@@ -654,7 +739,7 @@ export const AdminDashboardView: React.FC = () => {
                 <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-white/40">
                   <span>SQLite Event Journal</span>
                   <button
-                    onClick={() => setActiveTab('reports')}
+                    onClick={() => setActiveTab('system-logs')}
                     className="hover:text-white text-[11px] underline"
                   >
                     View All Logs
@@ -675,7 +760,7 @@ export const AdminDashboardView: React.FC = () => {
                   </p>
                 </div>
                 <button
-                  onClick={() => setActiveTab('catalog')}
+                  onClick={() => setActiveTab('anime-management')}
                   className="text-xs font-semibold text-[#8b5cf6] hover:text-[#c084fc] transition-colors"
                 >
                   Manage Catalog ›
@@ -839,104 +924,38 @@ export const AdminDashboardView: React.FC = () => {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* TAB 3: MEDIA CATALOG                                    */}
-        {/* ======================================================== */}
-        {activeTab === 'catalog' && (
-          <div className="p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)] space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-heading text-lg font-bold text-white">Media Catalog</h3>
-                <p className="text-xs text-white/50">
-                  Consumet and AniList content index for anime and manga.
-                </p>
-              </div>
-              <span className="text-xs text-white/40 font-mono">Consumet Multi-Provider Active</span>
-            </div>
+        {/* TAB 2: PLUGIN MANAGER */}
+        {activeTab === 'plugins' && <PluginManagerView filterType="all" />}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {topContent.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-3"
-                >
-                  <img
-                    src={item.cover}
-                    alt=""
-                    className="w-12 h-16 rounded-md object-cover bg-neutral-900 border border-white/10 flex-shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h5 className="font-heading font-bold text-xs text-white truncate">{item.title}</h5>
-                    <p className="text-[10px] text-white/40">{item.epOrCh}</p>
-                    <span className="text-[10px] text-[#fbbf24] font-semibold mt-1 inline-block">
-                      ★ {item.score}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (item.type === 'MANGA' || item.type === 'MANHWA') {
-                        navigateToMangaDetail(item.id);
-                      } else {
-                        navigateToDetail(item.id);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white"
-                    title="Inspect series"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* TAB 3: ANIME PROVIDERS */}
+        {activeTab === 'anime-providers' && <PluginManagerView filterType="anime" />}
 
-        {/* ======================================================== */}
-        {/* TAB 4: AUDIT LOGS & REPORTS                             */}
-        {/* ======================================================== */}
-        {(activeTab === 'reports' || activeTab === 'system' || activeTab === 'analytics' || activeTab === 'settings') && (
-          <div className="p-6 rounded-2xl glass bg-[#0c0c0e]/70 border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.45)] space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-heading text-lg font-bold text-white">
-                  {activeTab === 'reports' && 'Security & Operational Audit Logs'}
-                  {activeTab === 'system' && 'Infrastructure & CDN Status'}
-                  {activeTab === 'analytics' && 'Traffic & Egress Metrics'}
-                  {activeTab === 'settings' && 'Platform Configuration'}
-                </h3>
-                <p className="text-xs text-white/50">
-                  SQLite database table records and runtime telemetry.
-                </p>
-              </div>
+        {/* TAB 4: MOVIE PROVIDERS */}
+        {activeTab === 'movie-providers' && <PluginManagerView filterType="movie" />}
 
-              <button
-                onClick={() => showToast('Cache Purged', 'Edge cache refreshed.', 'info')}
-                className="h-[32px] px-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/80 hover:text-white transition-colors"
-              >
-                Purge Edge Cache
-              </button>
-            </div>
+        {/* TAB 5: STREAMING SOURCES */}
+        {activeTab === 'streaming-sources' && <StreamingSourcesView />}
 
-            <div className="space-y-2">
-              {overview.recentAuditLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-semibold mr-2">
-                      {log.action}
-                    </span>
-                    <span className="text-white/80 font-medium">{log.details || log.user_email || 'Action'}</span>
-                  </div>
-                  <span className="text-white/40 text-[11px] font-mono">
-                    {new Date(log.created_at).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* TAB 6: ANIME MANAGEMENT */}
+        {activeTab === 'anime-management' && <AnimeManagementView />}
+
+        {/* TAB 7: MOVIE MANAGEMENT */}
+        {activeTab === 'movie-management' && <MovieManagementView />}
+
+        {/* TAB 8: LANGUAGE & DUBBING SETTINGS */}
+        {activeTab === 'language-settings' && <LanguageSettingsView />}
+
+        {/* TAB 9: SYNC MANAGER */}
+        {activeTab === 'sync-manager' && <SyncManagerView />}
+
+        {/* TAB 10: ANALYTICS */}
+        {activeTab === 'analytics' && <AnalyticsView />}
+
+        {/* TAB 11: WEBSITE SETTINGS */}
+        {activeTab === 'settings' && <SettingsView />}
+
+        {/* TAB 12: SYSTEM LOGS & AUDIT */}
+        {activeTab === 'system-logs' && <SystemLogsView />}
       </div>
     </AdminLayout>
   );

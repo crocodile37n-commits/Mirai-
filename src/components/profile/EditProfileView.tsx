@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Trophy,
   PlayCircle,
@@ -8,6 +8,8 @@ import {
   EyeOff,
   Save,
   Check,
+  Camera,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { MiraiAvatar } from '../common/BrandLogo';
@@ -24,8 +26,11 @@ export const EditProfileView: React.FC = () => {
     episodesRemainingToNextLevel: 20,
     memberSince: 'October 2026',
     tempDiscordPassword: 'DISCORD-GUEST-2026',
+    avatarUrl: '',
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [displayName, setDisplayName] = useState(profile.username);
   const [email, setEmail] = useState(profile.email);
   const [newPassword, setNewPassword] = useState('');
@@ -33,6 +38,62 @@ export const EditProfileView: React.FC = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const handleAvatarFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Invalid File', 'Please select a valid image file (JPG, PNG, WebP).', 'error');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('File Too Large', 'Avatar image must be under 5MB.', 'error');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = reader.result as string;
+        try {
+          const res = await fetch('/api/user/avatar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatar: base64Data }),
+          });
+
+          const data = await res.json();
+          if (res.ok && data.avatarUrl) {
+            updateUserProfile({ avatarUrl: data.avatarUrl });
+            showToast('Avatar Updated', 'Profile photo updated successfully!', 'success');
+          } else {
+            updateUserProfile({ avatarUrl: base64Data });
+            showToast('Avatar Updated', 'Profile photo updated locally.', 'success');
+          }
+        } catch {
+          updateUserProfile({ avatarUrl: base64Data });
+          showToast('Avatar Updated', 'Profile photo updated locally.', 'success');
+        } finally {
+          setIsUploadingAvatar(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setIsUploadingAvatar(false);
+      showToast('Upload Failed', 'Could not process the selected image.', 'error');
+    }
+  };
+
+  const handleAvatarClick = () => {
+    if (!isAuthenticated) {
+      openAuthModal('sign-in');
+      return;
+    }
+    fileInputRef.current?.click();
+  };
 
   const handleCopyTempPassword = () => {
     const pwd = profile.tempDiscordPassword;
@@ -145,17 +206,41 @@ export const EditProfileView: React.FC = () => {
       {/* Avatar Row Card (~100px tall) */}
       <div className="p-4 rounded-[16px] bg-[#0c0c0e] border border-white/[0.08] flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <MiraiAvatar size={62} className="border border-white/20" />
+          <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+            <MiraiAvatar
+              size={64}
+              avatarUrl={profile.avatarUrl}
+              className="border border-white/20 group-hover:border-[#8b5cf6] transition-colors"
+            />
+            <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <Camera className="w-4 h-4 text-white" />
+            </div>
+          </div>
           <div>
             <h4 className="font-heading text-sm font-bold text-white">
               {profile.username}
             </h4>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/png,image/jpeg,image/webp,image/jpg"
+              className="hidden"
+              onChange={handleAvatarFileSelect}
+            />
             <button
               type="button"
-              onClick={() => showToast('Avatar Update', 'Select a new avatar picture from your library.', 'info')}
-              className="text-xs text-white/60 hover:text-white mt-0.5 inline-flex items-center gap-1 transition-colors"
+              onClick={handleAvatarClick}
+              disabled={isUploadingAvatar}
+              className="text-xs text-[#a78bfa] hover:text-[#c084fc] mt-0.5 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <span>✎ Change Avatar</span>
+              {isUploadingAvatar ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Uploading photo...</span>
+                </>
+              ) : (
+                <span>✎ Change Avatar Picture</span>
+              )}
             </button>
           </div>
         </div>

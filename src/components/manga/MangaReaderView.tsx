@@ -19,8 +19,9 @@ import {
   Rows,
   Columns,
   Share2,
+  ExternalLink,
 } from 'lucide-react';
-import { getMangaChapters, MANGA_DIRECTORY_POOL } from '../../services/animeApi';
+import { getMangaDetails, getMangaChapters, getMangaChapterPages } from '../../services/animeApi';
 import { AnimeMedia, MangaChapter } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { MiraiAvatar } from '../common/BrandLogo';
@@ -52,6 +53,9 @@ export const MangaReaderView: React.FC<MangaReaderViewProps> = ({
   const [fitMode, setFitMode] = useState<'fit-width' | 'natural'>('fit-width');
   const [readerMode, setReaderMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [horizontalPageIndex, setHorizontalPageIndex] = useState<number>(0);
+
+  const [realPages, setRealPages] = useState<string[]>([]);
+  const [loadingPages, setLoadingPages] = useState<boolean>(false);
 
   const [showChapterDrawer, setShowChapterDrawer] = useState(false);
   const [showCommentDrawer, setShowCommentDrawer] = useState(false);
@@ -88,10 +92,15 @@ export const MangaReaderView: React.FC<MangaReaderViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const found = MANGA_DIRECTORY_POOL.find((m) => m.id === mangaId) || MANGA_DIRECTORY_POOL[0];
-    setManga(found);
-    const chList = getMangaChapters(found.id, found.chaptersCount || 40);
-    setChapters(chList);
+    getMangaDetails(mangaId).then((m) => {
+      if (m) {
+        setManga(m);
+        const title = m.title.english || m.title.romaji;
+        getMangaChapters(m.id, title, m.chaptersCount || 40).then((chList) => {
+          setChapters(chList);
+        });
+      }
+    });
   }, [mangaId]);
 
   useEffect(() => {
@@ -115,27 +124,33 @@ export const MangaReaderView: React.FC<MangaReaderViewProps> = ({
     return () => node?.removeEventListener('scroll', handleScroll);
   }, [readerMode]);
 
-  // High-fidelity curated pages for this chapter
+  // Active chapter
   const currentChapter = useMemo(() => {
     return (
       chapters.find((c) => c.number === currentChapterNum) || {
         id: `ch_${mangaId}_${currentChapterNum}`,
         number: currentChapterNum,
         title: `Chapter ${currentChapterNum}`,
-        scanlatorGroup: 'Asura Scans',
+        scanlatorGroup: 'Official / MangaDex',
         pagesCount: 18,
-        publishDate: 'Oct 31, 2026',
-        pages: [
-          'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=1200&q=85',
-          'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1200&q=85',
-          'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=85',
-          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=85',
-          'https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=1200&q=85',
-          'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=85',
-        ],
+        publishDate: 'Official Release',
+        pages: [],
       }
     );
   }, [chapters, currentChapterNum, mangaId]);
+
+  // Fetch real pages when chapter changes
+  useEffect(() => {
+    if (!currentChapter?.id || currentChapter.id.startsWith('ch_')) {
+      setRealPages([]);
+      return;
+    }
+    setLoadingPages(true);
+    getMangaChapterPages(currentChapter.id).then((p) => {
+      setRealPages(p);
+      setLoadingPages(false);
+    });
+  }, [currentChapter?.id]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -179,7 +194,7 @@ export const MangaReaderView: React.FC<MangaReaderViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [readerMode, horizontalPageIndex, currentChapterNum, currentChapter, chapters.length]);
 
-  const pages = currentChapter.pages;
+  const pages = realPages.length > 0 ? realPages : (currentChapter.pages || []);
   const totalPages = pages.length;
   const totalChapters = chapters.length || 40;
 
@@ -371,7 +386,53 @@ export const MangaReaderView: React.FC<MangaReaderViewProps> = ({
         onClick={handleViewportTap}
         className="flex-1 overflow-y-auto flex flex-col items-center bg-[#060607] py-2 px-2 relative"
       >
-        {readerMode === 'vertical' ? (
+        {loadingPages ? (
+          <div className="py-28 flex flex-col items-center justify-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-[#8b5cf6] animate-spin" />
+            <p className="text-xs text-white/50 font-medium">Loading high-resolution chapter pages from MangaDex...</p>
+          </div>
+        ) : currentChapter.externalUrl ? (
+          <div className="w-full max-w-[680px] p-8 rounded-2xl bg-[#0c0c0e] border border-[#8b5cf6]/40 text-center space-y-4 my-10 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 flex items-center justify-center mx-auto text-[#c084fc]">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-heading text-lg font-bold text-white">
+                Official Publisher Reading Source
+              </h3>
+              <p className="text-xs text-white/60 max-w-[440px] mx-auto mt-1.5 leading-relaxed">
+                This chapter is licensed for official release. Read directly through the authorized publisher:
+              </p>
+            </div>
+            <a
+              href={currentChapter.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-xs font-bold transition-all shadow-lg active:scale-95"
+            >
+              <span>Open Authorized Reader (MangaPlus)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        ) : pages.length === 0 ? (
+          <div className="w-full max-w-[560px] p-8 rounded-2xl bg-[#0c0c0e] border border-white/10 text-center space-y-3 my-12">
+            <BookOpen className="w-8 h-8 text-white/30 mx-auto" />
+            <h3 className="text-sm font-bold text-white">Chapter {currentChapterNum}</h3>
+            <p className="text-xs text-white/50 leading-relaxed">
+              Official digital pages for this chapter are available via authorized partners.
+            </p>
+            <div className="pt-2 flex justify-center gap-3">
+              <button
+                onClick={() => switchChapter(currentChapterNum + 1)}
+                disabled={currentChapterNum >= totalChapters}
+                className="h-[36px] px-5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 disabled:opacity-40 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Next Chapter</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ) : readerMode === 'vertical' ? (
           /* VERTICAL SCROLL MODE (WEBTOON / CONTINUOUS) */
           <div
             style={{ width: '100%', maxWidth: containerWidthStyle }}

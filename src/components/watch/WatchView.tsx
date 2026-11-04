@@ -1,39 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Play,
-  Pause,
-  RotateCcw,
-  RotateCw,
-  Volume2,
-  VolumeX,
-  Maximize,
-  Minimize,
-  Settings,
-  ChevronDown,
-  ChevronUp,
   Heart,
-  Check,
   Search,
-  Bell,
   Eye,
   EyeOff,
   Image,
   Info,
   Tv,
-  Shuffle,
-  X,
   Share2,
   Sliders,
   Send,
   Star,
   Mic,
   Captions,
+  Volume2,
+  Check,
+  Bell,
+  PlayCircle,
+  ExternalLink,
+  Layers,
+  Inbox,
 } from 'lucide-react';
 import { getAnimeDetails, generateEpisodesForAnime } from '../../services/animeApi';
-import { AnimeMedia, EpisodeItem, CommentItem } from '../../types';
+import { AnimeMedia, EpisodeItem, CommentItem, StreamResolutionResult } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { MiraiAvatar } from '../common/BrandLogo';
-import { ToggleSwitch } from '../common/ToggleSwitch';
+import { VideoPlayer } from '../player/VideoPlayer';
+import { streamingAdapter } from '../../services/adapter/streamingAdapter';
 
 interface WatchViewProps {
   animeId: number;
@@ -62,22 +55,13 @@ export const WatchView: React.FC<WatchViewProps> = ({
   const [currentEpNum, setCurrentEpNum] = useState<number>(initialEpisodeNumber);
   const [theaterMode, setTheaterMode] = useState<boolean>(false);
 
-  // Video playback state
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<number>(13); // 00:13 as in spec screenshot
-  const totalDuration = 1420; // 23:40
-  const [volume, setVolume] = useState<number>(0.85);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [showSettingsMenu, setShowSettingsMenu] = useState<boolean>(false);
-  const [streamQuality, setStreamQuality] = useState<string>('1080p');
-  const [playbackSpeed, setPlaybackSpeed] = useState<string>('Normal');
-  const [volumeBoost, setVolumeBoost] = useState<string>('Off');
-  const [subtitles, setSubtitles] = useState<string>('English');
-  const [autoSkip, setAutoSkip] = useState<boolean>(true);
+  // Stream Resolution State (Adapter-driven)
+  const [streamResult, setStreamResult] = useState<StreamResolutionResult | null>(null);
+  const [streamLoading, setStreamLoading] = useState<boolean>(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
-  // Audio track (SUB / DUB / HINDI)
-  const [audioTrack, setAudioTrack] = useState<'SUB' | 'DUB' | 'HINDI'>('SUB');
-  const [sourceToastVisible, setSourceToastVisible] = useState<boolean>(false);
+  // Audio track preference ('SUB' | 'DUB' | 'HINDI')
+  const [audioTrackMode, setAudioTrackMode] = useState<'SUB' | 'DUB' | 'HINDI'>('SUB');
 
   // Sidebar episode list state
   const [episodeSearch, setEpisodeSearch] = useState<string>('');
@@ -89,20 +73,21 @@ export const WatchView: React.FC<WatchViewProps> = ({
   // Comments state
   const [newCommentText, setNewCommentText] = useState<string>('');
 
-  const playerRef = useRef<HTMLDivElement>(null);
-  const progressTimerRef = useRef<number | null>(null);
-
   useEffect(() => {
     setCurrentEpNum(initialEpisodeNumber);
   }, [initialEpisodeNumber]);
 
+  // Load Anime Details & Real Episode Metadata
   useEffect(() => {
+    let isMounted = true;
+
     getAnimeDetails(animeId).then(async (res) => {
+      if (!isMounted) return;
       if (res) {
         setAnime(res);
         const list = generateEpisodesForAnime(res);
 
-        // Fetch watched history from SQLite database
+        // Fetch watched history from backend if available
         try {
           const histRes = await fetch(`/api/history/anime/${res.id}`);
           if (histRes.ok) {
@@ -122,76 +107,90 @@ export const WatchView: React.FC<WatchViewProps> = ({
           }
         } catch {}
 
-        setEpisodes([...list]);
+        if (isMounted) {
+          setEpisodes([...list]);
 
-        // Update continue watching
-        const currentEp = list.find((e) => e.number === currentEpNum) || list[0];
-        updateWatchProgress({
-          animeId: res.id,
-          animeTitle: res.title.english || res.title.romaji,
-          animeCover: res.coverImage.large,
-          episodeNumber: currentEpNum,
-          episodeTitle: currentEp?.title || `Episode ${currentEpNum}`,
-          progressSeconds: currentTime,
-          totalDurationSeconds: totalDuration,
-          totalEpisodes: res.episodes || list.length,
-          lastWatchedAt: new Date().toISOString(),
-        });
+          // Record progress entry
+          const currentEp = list.find((e) => e.number === currentEpNum) || list[0];
+          updateWatchProgress({
+            animeId: res.id,
+            animeTitle: res.title.english || res.title.romaji,
+            animeCover: res.coverImage.large,
+            episodeNumber: currentEpNum,
+            episodeTitle: currentEp?.title || `Episode ${currentEpNum}`,
+            progressSeconds: 0,
+            totalDurationSeconds: (res.duration || 24) * 60,
+            totalEpisodes: res.episodes || list.length,
+            lastWatchedAt: new Date().toISOString(),
+          });
+        }
       }
     });
-  }, [animeId, currentEpNum]);
-
-  // Video progress simulator when playing
-  useEffect(() => {
-    if (isPlaying) {
-      progressTimerRef.current = window.setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= totalDuration) {
-            setIsPlaying(false);
-            if (userSettings.autoPlayNext) {
-              const nextEp = currentEpNum + 1;
-              if (nextEp <= (episodes.length || 18)) {
-                setCurrentEpNum(nextEp);
-                return 0;
-              }
-            }
-            return totalDuration;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } else {
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-    }
 
     return () => {
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      isMounted = false;
     };
-  }, [isPlaying, totalDuration, userSettings.autoPlayNext, currentEpNum, episodes.length]);
+  }, [animeId, currentEpNum]);
 
-  const handleAudioTrackChange = (track: 'SUB' | 'DUB' | 'HINDI') => {
-    setAudioTrack(track);
-    if (track === 'HINDI') {
-      // Trigger toast from section 7.1
-      setSourceToastVisible(true);
-      setTimeout(() => setSourceToastVisible(false), 5000);
+  // Resolve video stream via Centralized Backend Adapter
+  const loadStream = async () => {
+    setStreamLoading(true);
+    setStreamError(null);
+    try {
+      const res = await streamingAdapter.resolveEpisodeStream(animeId, currentEpNum, {
+        audio: audioTrackMode.toLowerCase(),
+      });
+      setStreamResult(res);
+    } catch (err: any) {
+      setStreamError(err?.message || 'Failed to resolve stream pipeline');
+    } finally {
+      setStreamLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadStream();
+  }, [animeId, currentEpNum, audioTrackMode]);
 
   const currentEpisode = episodes.find((e) => e.number === currentEpNum) || {
     number: currentEpNum,
-    title: "I'm Luffy! The Man Who Will Become the Pirate King!",
-    thumbnail: anime?.coverImage.large || '',
-    description: 'In this momentous episode, adventures begin on the grand stage.',
-    duration: '24m',
-    rating: 8.4,
-    airDate: 'Jul 03, 2026',
+    title: anime ? `${anime.title.english || anime.title.romaji} — Episode ${currentEpNum}` : `Episode ${currentEpNum}`,
+    thumbnail: anime?.bannerImage || anime?.coverImage.large || '',
+    description: `Episode ${currentEpNum} stream.`,
+    duration: anime?.duration ? `${anime.duration}m` : '24m',
+    rating: anime?.averageScore ? +(anime.averageScore / 10).toFixed(1) : 8.5,
+    airDate: anime?.seasonYear ? `${anime.season || ''} ${anime.seasonYear}`.trim() : 'Official Release',
   };
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  // Official stream metadata from AniList
+  const streamingEp = anime?.streamingEpisodes?.find((se) => {
+    const match = se.title.match(/Episode\s+(\d+)/i);
+    return match ? parseInt(match[1], 10) === currentEpNum : false;
+  }) || anime?.streamingEpisodes?.[currentEpNum - 1] || anime?.streamingEpisodes?.[0] || null;
+
+  // Track availability validation
+  const hasSubTrack = !streamResult || streamResult.audioTracks.length === 0 || streamResult.audioTracks.some((t) => t.code === 'ja' || !t.isDub);
+  const hasDubTrack = Boolean(streamResult?.audioTracks.some((t) => t.code === 'en' || t.isDub));
+  const hasHindiTrack = Boolean(streamResult?.audioTracks.some((t) => t.code === 'hi' || t.label.toLowerCase().includes('hindi')));
+
+  const handleAudioTrackSelect = (mode: 'SUB' | 'DUB' | 'HINDI') => {
+    if (mode === 'HINDI' && !hasHindiTrack) {
+      showToast(
+        'Hindi Track Not Supplied',
+        `The stream provider has not indexed a Hindi dub track for Episode ${currentEpNum}.`,
+        'info'
+      );
+      return;
+    }
+    if (mode === 'DUB' && !hasDubTrack && streamResult) {
+      showToast(
+        'English Dub Not Available',
+        `English dub is not supplied by the provider for Episode ${currentEpNum}.`,
+        'info'
+      );
+      return;
+    }
+    setAudioTrackMode(mode);
   };
 
   const isBookmarked = anime ? bookmarkedAnimes.includes(anime.id) : false;
@@ -204,18 +203,10 @@ export const WatchView: React.FC<WatchViewProps> = ({
     if (!newCommentText.trim()) return;
     addComment(animeId, currentEpNum, newCommentText.trim());
     setNewCommentText('');
-    showToast('Comment Posted', 'Your comment is now live for Episode ' + currentEpNum, 'success');
+    showToast('Comment Posted', `Your comment is now live for Episode ${currentEpNum}`, 'success');
   };
 
   const primaryTitle = anime ? anime.title.english || anime.title.romaji : 'Loading...';
-  const progressRatio = currentTime / totalDuration;
-
-  // Intro segment: 1:30 - 3:00 (90s - 180s)
-  // Outro segment: 21:30 - 23:00 (1290s - 1380s)
-  const introStartPercent = (90 / totalDuration) * 100;
-  const introWidthPercent = (90 / totalDuration) * 100;
-  const outroStartPercent = (1290 / totalDuration) * 100;
-  const outroWidthPercent = (90 / totalDuration) * 100;
 
   const filteredEpisodes = episodes.filter((ep) => {
     if (episodeSearch && !ep.title.toLowerCase().includes(episodeSearch.toLowerCase()) && !ep.number.toString().includes(episodeSearch)) {
@@ -245,249 +236,35 @@ export const WatchView: React.FC<WatchViewProps> = ({
         {/* LEFT / MAIN COLUMN: PLAYER + CONTROLS + INFO + DISCUSSION */}
         {/* ======================================================== */}
         <div className={theaterMode ? 'col-span-1' : 'lg:col-span-8'}>
-          {/* 7.1 PLAYER CONTAINER */}
-          <div
-            ref={playerRef}
-            className="relative w-full aspect-video rounded-[14px] bg-[#0c0c0e] border border-white/[0.08] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] group/player"
-          >
-            {/* Background Episode Still / Video Poster */}
-            <img
-              src={currentEpisode.thumbnail || anime?.coverImage.extraLarge}
-              alt=""
-              className="w-full h-full object-cover opacity-60"
-            />
+          {/* MODULAR VIDEO PLAYER COMPONENT (No Unsplash Fakes / Clean Empty State) */}
+          <VideoPlayer
+            animeId={animeId}
+            animeTitle={primaryTitle}
+            episodeNumber={currentEpNum}
+            episodeTitle={currentEpisode.title}
+            streamResult={streamResult}
+            loading={streamLoading}
+            error={streamError}
+            officialStreamingUrl={streamingEp?.url}
+            officialStreamingSite={streamingEp?.site || 'Crunchyroll'}
+            onNextEpisode={() => {
+              if (currentEpNum < (episodes.length || 1)) {
+                setCurrentEpNum((prev) => prev + 1);
+              }
+            }}
+            onPrevEpisode={() => {
+              if (currentEpNum > 1) {
+                setCurrentEpNum((prev) => prev - 1);
+              }
+            }}
+            hasNext={currentEpNum < (episodes.length || 1)}
+            hasPrev={currentEpNum > 1}
+            onRetry={loadStream}
+            theaterMode={theaterMode}
+            onToggleTheater={() => setTheaterMode(!theaterMode)}
+          />
 
-            {/* Gradient Overlays */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60 pointer-events-none" />
-
-            {/* IDLE / PAUSED OVERLAY */}
-            {!isPlaying && (
-              <div
-                onClick={() => setIsPlaying(true)}
-                className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer bg-black/45 backdrop-blur-[2px] transition-all"
-              >
-                {/* Centered ~58px glass circle with white play triangle */}
-                <div className="w-[58px] h-[58px] rounded-full glass bg-white/15 hover:bg-white/25 flex items-center justify-center transition-transform hover:scale-110 shadow-2xl active:scale-95">
-                  <Play className="w-6 h-6 fill-white text-white ml-1" />
-                </div>
-                {/* EP 1 & title */}
-                <span className="mt-4 font-heading font-extrabold text-[15px] text-white tracking-wider">
-                  EP {currentEpNum}
-                </span>
-                <p className="mt-0.5 text-[12px] text-white/65 max-w-[420px] text-center px-4 line-clamp-2">
-                  {currentEpisode.title}
-                </p>
-              </div>
-            )}
-
-            {/* Top-Right Gear Icon */}
-            <div className="absolute top-4 right-4 z-30">
-              <button
-                type="button"
-                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                className="w-9 h-9 rounded-full glass flex items-center justify-center text-white/80 hover:text-white transition-all active:scale-95"
-                aria-label="Player Settings"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-
-              {/* 7.1 SETTINGS MENU (~233px wide dark glass panel) */}
-              {showSettingsMenu && (
-                <div className="absolute top-11 right-0 w-[233px] rounded-[14px] glass bg-[#121215]/95 border border-white/15 shadow-2xl p-2.5 z-40 text-xs space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                  {/* Quality row */}
-                  <div
-                    onClick={() => {
-                      const next = streamQuality === '1080p' ? '720p' : streamQuality === '720p' ? '480p' : '1080p';
-                      setStreamQuality(next);
-                    }}
-                    className="flex items-center justify-between h-[36px] px-2.5 rounded-[8px] hover:bg-white/10 cursor-pointer text-white"
-                  >
-                    <span>Quality</span>
-                    <span className="text-white/60 font-semibold">{streamQuality} ›</span>
-                  </div>
-
-                  {/* Speed row */}
-                  <div
-                    onClick={() => {
-                      const next = playbackSpeed === 'Normal' ? '1.25x' : playbackSpeed === '1.25x' ? '1.5x' : 'Normal';
-                      setPlaybackSpeed(next);
-                    }}
-                    className="flex items-center justify-between h-[36px] px-2.5 rounded-[8px] hover:bg-white/10 cursor-pointer text-white"
-                  >
-                    <span>Speed</span>
-                    <span className="text-white/60 font-semibold">{playbackSpeed} ›</span>
-                  </div>
-
-                  {/* Volume Boost */}
-                  <div
-                    onClick={() => {
-                      const next = volumeBoost === 'Off' ? '150%' : volumeBoost === '150%' ? '200%' : 'Off';
-                      setVolumeBoost(next);
-                    }}
-                    className="flex items-center justify-between h-[36px] px-2.5 rounded-[8px] hover:bg-white/10 cursor-pointer text-white"
-                  >
-                    <span>Volume Boost</span>
-                    <span className="text-white/60 font-semibold">{volumeBoost} ›</span>
-                  </div>
-
-                  {/* Subtitles */}
-                  <div
-                    onClick={() => {
-                      const next = subtitles === 'English' ? 'Japanese' : subtitles === 'Japanese' ? 'Off' : 'English';
-                      setSubtitles(next);
-                    }}
-                    className="flex items-center justify-between h-[36px] px-2.5 rounded-[8px] hover:bg-white/10 cursor-pointer text-white"
-                  >
-                    <span>Subtitles</span>
-                    <span className="text-white/60 font-semibold">{subtitles} ›</span>
-                  </div>
-
-                  {/* Auto-skip */}
-                  <div className="flex items-center justify-between h-[36px] px-2.5 rounded-[8px] text-white">
-                    <span>Auto-skip</span>
-                    <ToggleSwitch checked={autoSkip} onChange={setAutoSkip} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 7.1 TOAST (Top-Left of the player) */}
-            {sourceToastVisible && (
-              <div className="absolute top-4 left-4 z-30 max-w-[385px] p-3 rounded-[12px] glass bg-black/80 border border-white/15 shadow-2xl flex items-start gap-3 animate-in fade-in duration-200">
-                <div className="w-8 h-8 rounded-[8px] bg-white flex items-center justify-center flex-shrink-0 text-black">
-                  <Shuffle className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0 pr-1">
-                  <h5 className="font-heading text-xs font-bold text-white">
-                    Source automatically switched
-                  </h5>
-                  <p className="text-[11px] text-white/60 leading-tight mt-0.5">
-                    Hindi audio is not available for Episode {currentEpNum}. Playing default HD stream (Server 1).
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSourceToastVisible(false)}
-                  className="text-white/40 hover:text-white"
-                  aria-label="Dismiss notification"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            {/* 7.1 PROGRESS BAR WITH GOLD SKIP SEGMENTS & CHIBI AVATAR THUMB */}
-            <div className="absolute bottom-11 left-0 right-0 px-4 z-20">
-              <div
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const pos = (e.clientX - rect.left) / rect.width;
-                  setCurrentTime(pos * totalDuration);
-                }}
-                className="relative w-full h-[6px] bg-white/20 hover:h-[8px] rounded-full cursor-pointer transition-all flex items-center"
-              >
-                {/* Intro Skip segment (Gold) */}
-                <div
-                  style={{ left: `${introStartPercent}%`, width: `${introWidthPercent}%` }}
-                  title="Intro Skip Segment"
-                  className="absolute h-full bg-[#b8962e] opacity-85 rounded-sm"
-                />
-
-                {/* Outro Skip segment (Gold) */}
-                <div
-                  style={{ left: `${outroStartPercent}%`, width: `${outroWidthPercent}%` }}
-                  title="Outro Skip Segment"
-                  className="absolute h-full bg-[#b8962e] opacity-85 rounded-sm"
-                />
-
-                {/* Elapsed Progress Bar */}
-                <div
-                  style={{ width: `${progressRatio * 100}%` }}
-                  className="h-full bg-white rounded-full relative"
-                >
-                  {/* Round Chibi Avatar Thumb at the playhead (~24px) */}
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 rounded-full bg-[#121215] border-2 border-white shadow-md flex items-center justify-center overflow-hidden">
-                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-[#8b5cf6] fill-current">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 11 7 11zm10 0c.83 0 1.5-.67 1.5-1.5S17.83 8 17 8s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-5 6c2.28 0 4.22-1.66 5-4H7c.78 2.34 2.72 4 5 4z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 7.1 CONTROL ROW (OVER VIDEO, BOTTOM) */}
-            <div className="absolute bottom-2 left-0 right-0 px-4 flex items-center justify-between text-white text-xs z-20">
-              {/* Left controls: Replay-10s, Play/Pause, Forward-10s, Time */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setCurrentTime((t) => Math.max(0, t - 10))}
-                  className="hover:text-white/80 active:scale-95 transition-transform"
-                  aria-label="Replay 10 seconds"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="hover:text-white/80 active:scale-95 transition-transform"
-                  aria-label={isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white" />}
-                </button>
-                <button
-                  onClick={() => setCurrentTime((t) => Math.min(totalDuration, t + 10))}
-                  className="hover:text-white/80 active:scale-95 transition-transform"
-                  aria-label="Forward 10 seconds"
-                >
-                  <RotateCw className="w-4 h-4" />
-                </button>
-                <span className="font-mono text-[12px] text-white font-medium ml-1">
-                  {formatTime(currentTime)} / {formatTime(totalDuration)}
-                </span>
-              </div>
-
-              {/* Right controls: Volume, PiP, Fullscreen */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 group/vol">
-                  <button
-                    onClick={() => setIsMuted(!isMuted)}
-                    className="hover:text-white/80"
-                    aria-label={isMuted ? 'Unmute' : 'Mute'}
-                  >
-                    {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={isMuted ? 0 : volume}
-                    onChange={(e) => {
-                      setVolume(parseFloat(e.target.value));
-                      setIsMuted(false);
-                    }}
-                    className="w-16 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-white"
-                  />
-                </div>
-
-                <button
-                  onClick={() => {
-                    if (playerRef.current) {
-                      if (!document.fullscreenElement) {
-                        playerRef.current.requestFullscreen?.();
-                      } else {
-                        document.exitFullscreen?.();
-                      }
-                    }
-                  }}
-                  className="hover:text-white/80"
-                  aria-label="Toggle Fullscreen"
-                >
-                  <Maximize className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 7.2 BELOW PLAYER: CONTROL STRIP */}
+          {/* BELOW PLAYER: CONTROL STRIP & SMART LANGUAGE / DUB CONTROLS */}
           <div className="mt-3 py-2.5 px-4 rounded-[12px] bg-[#0c0c0e] border border-white/[0.08] flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Left side: Theater, AutoPlay, AutoNext */}
             <div className="flex items-center gap-2">
@@ -527,17 +304,18 @@ export const WatchView: React.FC<WatchViewProps> = ({
             {/* Vertical Hairline */}
             <div className="w-[1px] h-5 bg-white/10 hidden sm:block" />
 
-            {/* Segmented Audio Row: [CC] SUB | [mic] DUB | [speaker] HINDI */}
+            {/* Smart Audio Language Switching (SUB | DUB | HINDI) */}
             <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
               <span className="text-[10px] font-mono font-bold tracking-wider text-white/40 sm:hidden">
                 AUDIO
               </span>
-              <div className="inline-flex p-0.5 rounded-full bg-black/50 border border-white/10">
+              <div className="inline-flex p-0.5 rounded-full bg-black/60 border border-white/10">
+                {/* SUB button */}
                 <button
                   type="button"
-                  onClick={() => handleAudioTrackChange('SUB')}
-                  className={`h-[26px] px-2.5 sm:px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                    audioTrack === 'SUB'
+                  onClick={() => handleAudioTrackSelect('SUB')}
+                  className={`h-[26px] px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    audioTrackMode === 'SUB'
                       ? 'bg-white text-black shadow-sm'
                       : 'text-white/60 hover:text-white'
                   }`}
@@ -546,30 +324,44 @@ export const WatchView: React.FC<WatchViewProps> = ({
                   <span>SUB</span>
                 </button>
 
+                {/* DUB button (Active when available, styled disabled when not supplied) */}
                 <button
                   type="button"
-                  onClick={() => handleAudioTrackChange('DUB')}
-                  className={`h-[26px] px-2.5 sm:px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                    audioTrack === 'DUB'
+                  onClick={() => handleAudioTrackSelect('DUB')}
+                  className={`h-[26px] px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    audioTrackMode === 'DUB'
                       ? 'bg-white text-black shadow-sm'
-                      : 'text-white/60 hover:text-white'
+                      : hasDubTrack || !streamResult
+                      ? 'text-white/60 hover:text-white'
+                      : 'text-white/30 hover:text-white/40'
                   }`}
+                  title={hasDubTrack || !streamResult ? 'English Dubbed Audio' : 'Dub not supplied by provider'}
                 >
                   <Mic className="w-3 h-3" />
                   <span>DUB</span>
+                  {!hasDubTrack && streamResult && (
+                    <span className="text-[9px] opacity-60">N/A</span>
+                  )}
                 </button>
 
+                {/* HINDI button (Disabled with clear explanation when provider doesn't supply it) */}
                 <button
                   type="button"
-                  onClick={() => handleAudioTrackChange('HINDI')}
-                  className={`h-[26px] px-2.5 sm:px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                    audioTrack === 'HINDI'
+                  onClick={() => handleAudioTrackSelect('HINDI')}
+                  className={`h-[26px] px-3 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
+                    audioTrackMode === 'HINDI'
                       ? 'bg-white text-black shadow-sm'
-                      : 'text-white/60 hover:text-white'
+                      : hasHindiTrack
+                      ? 'text-white/60 hover:text-white'
+                      : 'text-white/30 hover:text-white/40'
                   }`}
+                  title={hasHindiTrack ? 'Hindi Dubbed Audio' : 'Hindi Dub not supplied for this stream'}
                 >
                   <Volume2 className="w-3 h-3" />
                   <span>HINDI</span>
+                  {!hasHindiTrack && (
+                    <span className="text-[9px] px-1 rounded bg-white/10 text-white/50">N/A</span>
+                  )}
                 </button>
               </div>
             </div>
@@ -589,7 +381,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
 
               <button
                 onClick={() => setCurrentEpNum((n) => n + 1)}
-                disabled={currentEpNum >= (episodes.length || 18)}
+                disabled={currentEpNum >= (episodes.length || 1)}
                 className="h-[30px] px-3 rounded-full bg-white text-black font-semibold hover:bg-white/90 disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-95"
               >
                 Next
@@ -614,7 +406,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
             </div>
           </div>
 
-          {/* 7.3 INFO BLOCK */}
+          {/* INFO BLOCK */}
           <div className="mt-6">
             <h1 className="font-heading text-xl md:text-2xl font-extrabold text-white leading-snug">
               {primaryTitle} — Episode {currentEpNum}: {currentEpisode.title}
@@ -662,7 +454,7 @@ export const WatchView: React.FC<WatchViewProps> = ({
               </button>
             </div>
 
-            {/* 7.3 DISCUSSION CARD */}
+            {/* DISCUSSION CARD */}
             <div className="mt-8 p-5 rounded-[16px] bg-[#0c0c0e] border border-white/[0.08]">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-heading text-base font-bold text-white flex items-center gap-2">
@@ -726,12 +518,12 @@ export const WatchView: React.FC<WatchViewProps> = ({
         {/* RIGHT COLUMN / SIDEBAR: EPISODE LIST + MORE LIKE THIS   */}
         {/* ======================================================== */}
         <div className={theaterMode ? 'col-span-1 mt-6' : 'lg:col-span-4'}>
-          {/* 7.4 SIDEBAR EPISODE LIST PANEL */}
-          <div className="rounded-[14px] bg-[#0c0c0e] border border-white/[0.08] overflow-hidden flex flex-col h-[480px]">
+          {/* SIDEBAR EPISODE LIST PANEL */}
+          <div className="rounded-[14px] bg-[#0c0c0e] border border-white/[0.08] overflow-hidden flex flex-col h-[520px]">
             {/* Header row */}
             <div className="p-3 border-b border-white/[0.08] flex items-center justify-between gap-2 text-xs">
               <span className="px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-bold text-white">
-                1 - {episodes.length}
+                {episodes.length > 0 ? `1 - ${episodes.length}` : '0 Episodes'}
               </span>
 
               <div className="relative flex-1">
@@ -768,77 +560,106 @@ export const WatchView: React.FC<WatchViewProps> = ({
               </button>
             </div>
 
-            {/* Scrollable Episode Rows */}
+            {/* Scrollable Episode Rows OR Clean Empty State */}
             <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
-              {filteredEpisodes.map((ep) => {
-                const isActive = ep.number === currentEpNum;
+              {episodes.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/40">
+                    <Inbox className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-heading text-xs font-bold text-white">No Indexed Episodes</h5>
+                    <p className="text-[11px] text-white/40 max-w-[220px] mx-auto mt-1 leading-relaxed">
+                      Episodes will appear once synchronized from your streaming provider adapter.
+                    </p>
+                  </div>
+                </div>
+              ) : filteredEpisodes.length === 0 ? (
+                <div className="py-12 text-center text-xs text-white/40">
+                  No episodes match "{episodeSearch}"
+                </div>
+              ) : (
+                filteredEpisodes.map((ep) => {
+                  const isActive = ep.number === currentEpNum;
 
-                return (
-                  <div
-                    key={ep.number}
-                    onClick={() => setCurrentEpNum(ep.number)}
-                    className={`p-2.5 flex gap-3 cursor-pointer transition-colors ${
-                      isActive
-                        ? 'bg-white/10 border-l-2 border-white'
-                        : 'hover:bg-white/5'
-                    }`}
-                  >
-                    {showThumbnails && (
-                      <div className="relative w-[118px] h-[66px] rounded-[8px] overflow-hidden bg-neutral-900 flex-shrink-0">
-                        <img
-                          src={ep.thumbnail || anime?.coverImage.large}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-[4px] bg-black/80 text-[9px] font-bold text-white">
-                          EP {ep.number}
-                        </span>
-                        {ep.isWatched && (
-                          <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#22c55e] flex items-center justify-center text-black shadow">
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  return (
+                    <div
+                      key={ep.number}
+                      onClick={() => setCurrentEpNum(ep.number)}
+                      className={`p-2.5 flex gap-3 cursor-pointer transition-colors ${
+                        isActive
+                          ? 'bg-white/10 border-l-2 border-[#8b5cf6]'
+                          : 'hover:bg-white/5'
+                      }`}
+                    >
+                      {showThumbnails && (
+                        <div className="relative w-[118px] h-[66px] rounded-[8px] overflow-hidden bg-neutral-900 flex-shrink-0">
+                          {ep.thumbnail ? (
+                            <img
+                              src={ep.thumbnail}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-white/5 text-white/30 text-[10px]">
+                              EP {ep.number}
+                            </div>
+                          )}
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-[4px] bg-black/80 text-[9px] font-bold text-white">
+                            EP {ep.number}
                           </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex-1 min-w-0 flex flex-col justify-between">
-                      <div>
-                        <h4 className="font-heading text-xs font-bold text-white truncate">
-                          {ep.title}
-                        </h4>
-                        <p className="text-[11px] text-white/40 line-clamp-2 mt-0.5">
-                          {ep.description}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] text-white/40 mt-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="px-1 rounded bg-white/10 text-[9px] font-bold text-white/70">
-                            CC
-                          </span>
-                          <span className="flex items-center gap-0.5 text-[#f5c518]">
-                            ★ {ep.rating}
-                          </span>
+                          {ep.isWatched && (
+                            <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#22c55e] flex items-center justify-center text-black shadow">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </span>
+                          )}
                         </div>
-                        <span>{ep.airDate}</span>
+                      )}
+
+                      <div className="flex-1 min-w-0 flex flex-col justify-between">
+                        <div>
+                          <h4 className="font-heading text-xs font-bold text-white truncate">
+                            {ep.title}
+                          </h4>
+                          <p className="text-[11px] text-white/40 line-clamp-2 mt-0.5">
+                            {ep.description}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-white/40 mt-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-1 rounded bg-white/10 text-[9px] font-bold text-white/70">
+                              CC
+                            </span>
+                            <span className="flex items-center gap-0.5 text-[#f5c518]">
+                              ★ {ep.rating}
+                            </span>
+                          </div>
+                          <span>{ep.airDate}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
-            {/* Pinned strip at bottom: Countdown to next episode */}
-            <div className="p-3 border-t border-white/[0.08] bg-[#121215] flex items-center gap-2 text-xs text-white/80">
-              <Bell className="w-4 h-4 text-[#8b5cf6] flex-shrink-0 animate-pulse" />
-              <span className="truncate">
-                Episode {(episodes.length || 18) + 1} in <strong className="font-bold text-white">6d 1h</strong> · Thu, Nov 5, 20:56
-              </span>
-            </div>
+            {/* Pinned strip at bottom: Countdown or Next episode info */}
+            {anime?.nextAiringEpisode && (
+              <div className="p-3 border-t border-white/[0.08] bg-[#121215] flex items-center gap-2 text-xs text-white/80">
+                <Bell className="w-4 h-4 text-[#8b5cf6] flex-shrink-0 animate-pulse" />
+                <span className="truncate">
+                  Episode {anime.nextAiringEpisode.episode} in{' '}
+                  <strong className="font-bold text-white">
+                    {Math.ceil(anime.nextAiringEpisode.timeUntilAiring / 86400)}d
+                  </strong>
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* 7.4 MORE LIKE THIS CARD */}
+          {/* MORE LIKE THIS CARD */}
           {recommendations.length > 0 && (
             <div className="mt-6 p-4 rounded-[14px] bg-[#0c0c0e] border border-white/[0.08]">
               <h3 className="font-heading text-xs font-extrabold uppercase tracking-wider text-white pb-3 border-b border-white/[0.08]">

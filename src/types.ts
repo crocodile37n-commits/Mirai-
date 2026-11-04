@@ -70,6 +70,44 @@ export interface EpisodeItem {
   rating: number;
   airDate: string;
   isWatched?: boolean;
+  hasDub?: boolean;
+  hasSub?: boolean;
+}
+
+export interface VideoSource {
+  id: string;
+  url: string;
+  format: 'hls' | 'mp4' | 'dash' | 'embed';
+  quality: string; // '1080p' | '720p' | '480p' | '360p' | 'Auto'
+  serverName: string;
+  isDefault?: boolean;
+}
+
+export interface AudioTrack {
+  id: string;
+  code: string; // 'ja' | 'hi' | 'en'
+  label: string; // 'Japanese (Original)' | 'Hindi Dub' | 'English Dub'
+  isDub: boolean;
+  isDefault?: boolean;
+}
+
+export interface SubtitleTrack {
+  id: string;
+  language: string;
+  label: string;
+  url: string;
+  format: 'vtt' | 'ass' | 'srt';
+  isDefault?: boolean;
+}
+
+export interface StreamResolutionResult {
+  animeId: number;
+  episodeNumber: number;
+  sources: VideoSource[];
+  audioTracks: AudioTrack[];
+  subtitles: SubtitleTrack[];
+  intro?: { start: number; end: number };
+  outro?: { start: number; end: number };
 }
 
 export interface MangaChapter {
@@ -96,6 +134,7 @@ export interface ScheduleAiringItem {
   description: string;
   dayOfWeek: 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
   dateFormatted: string; // e.g. "Saturday, Oct 31"
+  airingTimestamp?: number;
 }
 
 export interface WatchProgress {

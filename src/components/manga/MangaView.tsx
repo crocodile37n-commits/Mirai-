@@ -256,7 +256,6 @@ export const MangaView: React.FC = () => {
                   <PosterCard
                     key={manga.id}
                     anime={manga}
-                    onClick={() => navigateToMangaDetail(manga.id)}
                   />
                 ))}
               </div>
