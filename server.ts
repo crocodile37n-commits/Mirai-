@@ -31,9 +31,17 @@ export const AUTHORIZED_ADMIN_EMAILS = new Set([
   'altamashkhan27ah@gmail.com',
 ].filter(Boolean));
 
-export function isAuthorizedAdmin(email?: string | null): boolean {
+export function isOwnerAdmin(email?: string | null): boolean {
   if (!email) return false;
   return AUTHORIZED_ADMIN_EMAILS.has(email.trim().toLowerCase());
+}
+
+export function isAuthorizedAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  if (AUTHORIZED_ADMIN_EMAILS.has(clean)) return true;
+  // Also check dynamic admin invitations in database
+  return sqliteDb.isInvitedAdmin(clean);
 }
 
 export const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'altamashkhan27ah@gmail.com').trim().toLowerCase();
@@ -567,6 +575,30 @@ app.post('/api/analytics/event', (req: Request, res: Response) => {
   res.status(201).json({ status: 'recorded' });
 });
 
+// Real-time visitor activity heartbeat (client posts every 25-30s)
+app.post('/api/analytics/heartbeat', (req: Request, res: Response) => {
+  const { clientId, currentRoute, isWatching, watchMediaId, watchMediaTitle } = req.body;
+  if (!clientId) {
+    return res.status(400).json({ error: 'clientId is required' });
+  }
+
+  const ip = hashIp(req);
+  const user = (req as any).user;
+
+  sqliteDb.recordHeartbeat({
+    clientId,
+    ipHash: ip,
+    userId: user?.id,
+    username: user?.username,
+    currentRoute,
+    isWatching: Boolean(isWatching),
+    watchMediaId,
+    watchMediaTitle,
+  });
+
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
 // ==========================================
 // 4. OWNER-ONLY ADMIN APIS (requireAdmin)
 // ==========================================
@@ -776,6 +808,155 @@ app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   const update = req.body;
   const updated = db.updateSettings(update);
   res.json({ success: true, settings: updated });
+});
+
+// Admin Password & Account Settings (/api/admin/auth/update-account)
+app.post(['/api/admin/auth/update-account', '/api/admin/update-account'], requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).user;
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword) {
+    return res.status(400).json({ error: 'Current password is required to authorize credentials update.' });
+  }
+
+  // Verify current password
+  const fullUser = sqliteDb.findUserByEmail(admin.email);
+  if (!fullUser) {
+    return res.status(404).json({ error: 'Administrator record not found.' });
+  }
+
+  const isCurrentValid = sqliteDb.verifyPassword(String(currentPassword), fullUser.password_hash);
+  if (!isCurrentValid) {
+    sqliteDb.addAuditLog({
+      action: 'admin_password_change_failed',
+      actorEmail: admin.email,
+      actorRole: 'admin',
+      details: 'Failed password update: incorrect current password entered.',
+      ipHash: hashIp(req),
+    });
+    return res.status(401).json({ error: 'Current password does not match.' });
+  }
+
+  if (newPassword) {
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
+    }
+    sqliteDb.updateUserPassword(admin.id, String(newPassword));
+  }
+
+  sqliteDb.addAuditLog({
+    action: 'admin_password_changed',
+    actorEmail: admin.email,
+    actorRole: 'admin',
+    details: 'Administrator password changed successfully.',
+    ipHash: hashIp(req),
+  });
+
+  res.json({ success: true, message: 'Administrator credentials updated successfully.' });
+});
+
+// Admin Reset User Password
+app.post('/api/admin/users/:id/reset-password', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  if (!newPassword || String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'New temporary password must be at least 6 characters.' });
+  }
+
+  const targetUser = sqliteDb.getUserById(id);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  // Prevent modifying owner admin unless you are the owner
+  const admin = (req as any).user;
+  if (isOwnerAdmin(targetUser.email) && !isOwnerAdmin(admin.email)) {
+    return res.status(403).json({ error: 'Only the site owner can modify primary administrator credentials.' });
+  }
+
+  sqliteDb.updateUserPassword(id, String(newPassword));
+  sqliteDb.addAuditLog({
+    action: 'user_password_reset_by_admin',
+    actorEmail: admin.email,
+    actorRole: 'admin',
+    target: targetUser.email,
+    details: `Admin reset password for user @${targetUser.username}`,
+    ipHash: hashIp(req),
+  });
+
+  res.json({ success: true, message: `Password for @${targetUser.username} updated.` });
+});
+
+// Admin List Administrators and Invitations
+app.get('/api/admin/administrators', requireAdmin, (_req: Request, res: Response) => {
+  // 1. All users with role='admin'
+  const allUsers = sqliteDb.listUsers();
+  const adminUsers = allUsers.filter(u => u.role === 'admin' || isOwnerAdmin(u.email));
+  const invitations = sqliteDb.listAdminInvitations();
+
+  res.json({
+    success: true,
+    administrators: adminUsers.map(u => ({
+      ...u,
+      isOwner: isOwnerAdmin(u.email),
+    })),
+    invitations,
+  });
+});
+
+// Admin Invite New Administrator Gmail/Email
+app.post('/api/admin/administrators/invite', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).user;
+  const { email } = req.body;
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid administrator email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Create invitation and grant admin authorization in database
+  const { invitation, token } = sqliteDb.createAdminInvitation(cleanEmail, admin.email);
+
+  sqliteDb.addAuditLog({
+    action: 'admin_invited',
+    actorEmail: admin.email,
+    actorRole: 'admin',
+    target: cleanEmail,
+    details: `Granted administrator privileges to ${cleanEmail}`,
+    ipHash: hashIp(req),
+  });
+
+  res.json({
+    success: true,
+    message: `Administrator privileges granted for ${cleanEmail}. They can now sign in using their account.`,
+    invitation,
+    token,
+  });
+});
+
+// Admin Revoke Administrator Access
+app.post('/api/admin/administrators/revoke', requireAdmin, (req: Request, res: Response) => {
+  const admin = (req as any).user;
+  const { email, invitationId } = req.body;
+  const targetEmail = (email || '').trim().toLowerCase();
+
+  if (isOwnerAdmin(targetEmail)) {
+    return res.status(403).json({ error: 'Cannot revoke site owner administrative privileges.' });
+  }
+
+  sqliteDb.revokeAdminInvitation(invitationId || targetEmail);
+
+  sqliteDb.addAuditLog({
+    action: 'admin_revoked',
+    actorEmail: admin.email,
+    actorRole: 'admin',
+    target: targetEmail,
+    details: `Revoked administrator privileges from ${targetEmail}`,
+    ipHash: hashIp(req),
+  });
+
+  res.json({ success: true, message: `Administrator privileges revoked for ${targetEmail}.` });
 });
 
 // ==========================================

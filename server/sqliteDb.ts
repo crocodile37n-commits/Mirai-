@@ -98,6 +98,32 @@ export function initDatabase() {
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Real-time Active Visitor Heartbeats
+    CREATE TABLE IF NOT EXISTS active_heartbeats (
+      client_id TEXT PRIMARY KEY,
+      ip_hash TEXT NOT NULL,
+      user_id TEXT,
+      username TEXT,
+      current_route TEXT,
+      is_watching INTEGER NOT NULL DEFAULT 0,
+      watch_media_id TEXT,
+      watch_media_title TEXT,
+      last_seen INTEGER NOT NULL
+    );
+
+    -- Authorized Trusted Administrators & Invitations
+    CREATE TABLE IF NOT EXISTS admin_invitations (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      invited_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'accepted' | 'revoked'
+      token TEXT UNIQUE NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      accepted_at DATETIME
+    );
+
     -- Providers (Vega & Modular Architecture)
     CREATE TABLE IF NOT EXISTS providers (
       id TEXT PRIMARY KEY,
@@ -863,6 +889,28 @@ export const sqliteDb = {
     `);
     const auditLogs = auditLogsStmt.all();
 
+    // 11. Real-time Heartbeat Telemetry (last 60 seconds)
+    const sixtySecondsAgo = Date.now() - 60000;
+    // Clean old heartbeats (older than 10 minutes)
+    try {
+      sqlite.prepare(`DELETE FROM active_heartbeats WHERE last_seen < ?`).run(Date.now() - 600000);
+    } catch {}
+
+    const liveVisitorsStmt = sqlite.prepare(`
+      SELECT COUNT(DISTINCT ip_hash) as count FROM active_heartbeats WHERE last_seen >= ?
+    `);
+    const liveVisitors = (liveVisitorsStmt.get(sixtySecondsAgo) as any)?.count || 0;
+
+    const liveAuthUsersStmt = sqlite.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count FROM active_heartbeats WHERE user_id IS NOT NULL AND last_seen >= ?
+    `);
+    const liveAuthUsers = (liveAuthUsersStmt.get(sixtySecondsAgo) as any)?.count || 0;
+
+    const liveWatchingStmt = sqlite.prepare(`
+      SELECT COUNT(DISTINCT client_id) as count FROM active_heartbeats WHERE is_watching = 1 AND last_seen >= ?
+    `);
+    const liveWatchingCount = (liveWatchingStmt.get(sixtySecondsAgo) as any)?.count || 0;
+
     return {
       totalRegisteredUsers,
       totalSuccessfulSignins,
@@ -871,7 +919,10 @@ export const sqliteDb = {
       dailyVisitors: visitorStats.dailyVisitors,
       weeklyVisitors: visitorStats.weeklyVisitors,
       monthlyVisitors: visitorStats.monthlyVisitors,
-      activeUsersCount: activeSessionsCount,
+      activeUsersCount: liveAuthUsers > 0 ? liveAuthUsers : activeSessionsCount,
+      liveVisitorsCount: liveVisitors,
+      liveAuthUsersCount: liveAuthUsers,
+      liveWatchingCount,
       registrationsToday,
       registrationsThisWeek,
       registrationsThisMonth,
@@ -880,6 +931,105 @@ export const sqliteDb = {
       visitorTimeline: visitorStats.dailyTimeline,
       auditLogs,
     };
+  },
+
+  // ---------------- REALTIME HEARTBEAT TRACKING ----------------
+  recordHeartbeat(params: {
+    clientId: string;
+    ipHash: string;
+    userId?: string;
+    username?: string;
+    currentRoute?: string;
+    isWatching?: boolean;
+    watchMediaId?: string;
+    watchMediaTitle?: string;
+  }): void {
+    const now = Date.now();
+    const stmt = sqlite.prepare(`
+      INSERT INTO active_heartbeats (
+        client_id, ip_hash, user_id, username, current_route,
+        is_watching, watch_media_id, watch_media_title, last_seen
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(client_id) DO UPDATE SET
+        ip_hash = excluded.ip_hash,
+        user_id = excluded.user_id,
+        username = excluded.username,
+        current_route = excluded.current_route,
+        is_watching = excluded.is_watching,
+        watch_media_id = excluded.watch_media_id,
+        watch_media_title = excluded.watch_media_title,
+        last_seen = excluded.last_seen
+    `);
+
+    stmt.run(
+      params.clientId,
+      params.ipHash,
+      params.userId || null,
+      params.username || null,
+      params.currentRoute || '/',
+      params.isWatching ? 1 : 0,
+      params.watchMediaId || null,
+      params.watchMediaTitle || null,
+      now
+    );
+  },
+
+  // ---------------- MULTI-ADMIN INVITATIONS & MANAGEMENT ----------------
+  listAdminInvitations(): any[] {
+    const stmt = sqlite.prepare(`
+      SELECT * FROM admin_invitations ORDER BY created_at DESC
+    `);
+    return stmt.all();
+  },
+
+  createAdminInvitation(email: string, invitedBy: string): { invitation: any; token: string } {
+    const normalizedEmail = email.trim().toLowerCase();
+    const id = `inv_${crypto.randomBytes(8).toString('hex')}`;
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    const stmt = sqlite.prepare(`
+      INSERT INTO admin_invitations (id, email, role, invited_by, status, token, expires_at)
+      VALUES (?, ?, 'admin', ?, 'pending', ?, ?)
+      ON CONFLICT(email) DO UPDATE SET
+        status = 'pending',
+        token = excluded.token,
+        expires_at = excluded.expires_at,
+        created_at = CURRENT_TIMESTAMP
+    `);
+    stmt.run(id, normalizedEmail, invitedBy, token, expiresAt);
+
+    // If an existing user account exists with this email, upgrade their role to admin
+    const existingUser = this.findUserByEmail(normalizedEmail);
+    if (existingUser) {
+      sqlite.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(existingUser.id);
+    }
+
+    const inv = sqlite.prepare(`SELECT * FROM admin_invitations WHERE email = ?`).get(normalizedEmail);
+    return { invitation: inv, token };
+  },
+
+  revokeAdminInvitation(invitationIdOrEmail: string): boolean {
+    const stmt = sqlite.prepare(`
+      UPDATE admin_invitations SET status = 'revoked' WHERE id = ? OR LOWER(email) = LOWER(?)
+    `);
+    const res = stmt.run(invitationIdOrEmail, invitationIdOrEmail);
+
+    // If a user account exists, downgrade role if not owner
+    const inv = sqlite.prepare(`SELECT email FROM admin_invitations WHERE id = ? OR LOWER(email) = LOWER(?)`).get(invitationIdOrEmail, invitationIdOrEmail) as any;
+    if (inv && inv.email) {
+      sqlite.prepare(`UPDATE users SET role = 'user' WHERE LOWER(email) = LOWER(?)`).run(inv.email);
+    }
+    return res.changes > 0;
+  },
+
+  isInvitedAdmin(email?: string | null): boolean {
+    if (!email) return false;
+    const stmt = sqlite.prepare(`
+      SELECT * FROM admin_invitations WHERE LOWER(email) = LOWER(?) AND status = 'accepted'
+    `);
+    const record = stmt.get(email.trim().toLowerCase());
+    return Boolean(record);
   },
 
   // ---------------- AUDIT LOGGING ----------------

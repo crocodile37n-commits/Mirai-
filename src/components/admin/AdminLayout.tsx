@@ -1,18 +1,11 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
-  Boxes,
-  Tv,
-  Video,
-  Layers,
-  Film,
-  Clapperboard,
-  Globe2,
-  RefreshCw,
   Users,
   BarChart3,
   Settings,
   FileText,
+  ShieldCheck,
   ExternalLink,
   Search,
   Bell,
@@ -29,17 +22,10 @@ import { useApp } from '../../context/AppContext';
 
 export type AdminTab =
   | 'overview'
-  | 'plugins'
-  | 'anime-providers'
-  | 'movie-providers'
-  | 'streaming-sources'
-  | 'anime-management'
-  | 'movie-management'
-  | 'language-settings'
-  | 'sync-manager'
   | 'users'
   | 'analytics'
   | 'settings'
+  | 'admin-account'
   | 'system-logs';
 
 interface AdminLayoutProps {
@@ -58,19 +44,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }>; badge?: string }> = [
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'plugins', label: 'Plugin Manager', icon: Boxes, badge: 'Vega' },
-    { id: 'anime-providers', label: 'Anime Providers', icon: Tv },
-    { id: 'movie-providers', label: 'Movie Providers', icon: Video },
-    { id: 'streaming-sources', label: 'Streaming Sources', icon: Layers },
-    { id: 'anime-management', label: 'Anime Management', icon: Film },
-    { id: 'movie-management', label: 'Movie Management', icon: Clapperboard, badge: 'New' },
-    { id: 'language-settings', label: 'Language & Audio Settings', icon: Globe2 },
-    { id: 'sync-manager', label: 'Sync Manager', icon: RefreshCw },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'overview', label: 'Dashboard & Live Activity', icon: LayoutDashboard },
+    { id: 'users', label: 'User Directory', icon: Users },
+    { id: 'analytics', label: 'Real-Time Analytics', icon: BarChart3 },
+    { id: 'admin-account', label: 'Admin Accounts & Security', icon: ShieldCheck },
     { id: 'settings', label: 'Website Settings', icon: Settings },
-    { id: 'system-logs', label: 'System Logs', icon: FileText },
+    { id: 'system-logs', label: 'Audit Logs', icon: FileText },
   ];
 
   const handleNavClick = (tabId: AdminTab) => {
@@ -238,51 +217,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <h1 className="font-heading text-sm sm:text-base font-extrabold text-white tracking-tight">
                 {activeTab === 'overview'
                   ? 'Real-Time Operational Analytics'
-                  : activeTab === 'plugins'
-                  ? 'Vega Streaming Plugins & Providers'
-                  : activeTab === 'anime-providers'
-                  ? 'Anime Streaming Providers'
-                  : activeTab === 'movie-providers'
-                  ? 'Movie Streaming Providers'
-                  : activeTab === 'streaming-sources'
-                  ? 'Streaming Sources & CDN Mirrors'
-                  : activeTab === 'anime-management'
-                  ? 'Anime Catalog Management'
-                  : activeTab === 'movie-management'
-                  ? 'Movie Catalog Management'
-                  : activeTab === 'language-settings'
-                  ? 'Smart Language & Dubbing Configuration'
-                  : activeTab === 'sync-manager'
-                  ? 'Incremental Sync Engine'
                   : activeTab === 'analytics'
-                  ? 'Traffic & Streaming Telemetry'
+                  ? 'Real-Time Traffic & Streaming Telemetry'
                   : activeTab === 'users'
                   ? 'User Directory & Access Control'
+                  : activeTab === 'admin-account'
+                  ? 'Administrator Accounts & Security'
                   : activeTab === 'system-logs'
                   ? 'System Logs & Security Audit'
-                  : 'Platform Configuration'}
+                  : 'Website Global Settings'}
               </h1>
             </div>
           </div>
 
           {/* Top Bar Quick Controls */}
           <div className="flex items-center gap-3">
-            {/* Search Bar */}
-            <div className="relative hidden md:block w-[240px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search catalog, logs, users..."
-                className="w-full h-[36px] pl-8 pr-3 rounded-full bg-[#121215] border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30 transition-colors"
-              />
-            </div>
-
             {/* Status Pill */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#22c55e]/10 border border-[#22c55e]/30 text-[#22c55e] text-xs font-semibold">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">Systems Nominal</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#8b5cf6]/10 border border-[#8b5cf6]/30 text-[#c084fc] text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
+              <span>Admin Plane Online</span>
             </div>
 
             {/* Notification Bell */}

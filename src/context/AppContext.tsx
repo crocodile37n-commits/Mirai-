@@ -278,6 +278,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }).catch(() => {});
   }, [nav.currentRoute]);
 
+  // Real-time visitor activity heartbeat (sends every 25s for live dashboard counters)
+  useEffect(() => {
+    // Persistent client identifier per browser session
+    let clientId = sessionStorage.getItem('mirai_client_id');
+    if (!clientId) {
+      clientId = `c_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
+      sessionStorage.setItem('mirai_client_id', clientId);
+    }
+
+    const sendHeartbeat = () => {
+      const isWatching = nav.currentRoute === 'watch';
+      fetch('/api/analytics/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          currentRoute: nav.currentRoute,
+          isWatching,
+          watchMediaId: nav.animeDetailId ? String(nav.animeDetailId) : undefined,
+        }),
+      }).catch(() => {});
+    };
+
+    // Send immediately on route mount
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 25000);
+    return () => clearInterval(interval);
+  }, [nav.currentRoute, nav.animeDetailId]);
+
   // Keyboard shortcut '/' handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

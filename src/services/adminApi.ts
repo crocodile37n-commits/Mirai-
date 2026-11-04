@@ -266,4 +266,51 @@ export const adminApi = {
       body: JSON.stringify(settings),
     });
   },
+
+  // User Password Reset
+  async resetUserPassword(userId: string, newPassword: string) {
+    return adminFetch<{ success: boolean; message: string }>(`/api/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
+  },
+
+  // Multi-Admin Management
+  async getAdministrators() {
+    return adminFetch<{
+      success: boolean;
+      administrators: Array<{
+        id: string;
+        username: string;
+        email: string;
+        full_name?: string;
+        role: string;
+        status: string;
+        isOwner: boolean;
+        created_at: string;
+      }>;
+      invitations: Array<{
+        id: string;
+        email: string;
+        role: string;
+        invited_by: string;
+        status: string;
+        created_at: string;
+      }>;
+    }>('/api/admin/administrators');
+  },
+
+  async inviteAdministrator(email: string) {
+    return adminFetch<{ success: boolean; message: string; invitation: any }>('/api/admin/administrators/invite', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async revokeAdministrator(emailOrId: string) {
+    return adminFetch<{ success: boolean; message: string }>('/api/admin/administrators/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ email: emailOrId, invitationId: emailOrId }),
+    });
+  },
 };
